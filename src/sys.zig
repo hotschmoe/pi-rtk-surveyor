@@ -291,3 +291,40 @@ pub fn sleepMs(ms: u32) void {
     const ts = linux.timespec{ .sec = @intCast(ms / 1000), .nsec = @intCast((ms % 1000) * 1_000_000) };
     _ = linux.nanosleep(&ts, null);
 }
+
+/// Call `ctx.entry(name)` for every directory entry except "." and "..".
+pub fn forEachEntry(path: []const u8, ctx: anytype) Error!void {
+    const fd = try open(path, .{ .DIRECTORY = true }, 0);
+    defer close(fd);
+    var buf: [2048]u8 align(8) = undefined;
+    while (true) {
+        const n = try check(linux.getdents64(fd, &buf, buf.len));
+        if (n == 0) break;
+        var off: usize = 0;
+        while (off < n) {
+            const reclen = std.mem.readInt(u16, buf[off + 16 ..][0..2], .little);
+            const name_ptr: [*:0]const u8 = @ptrCast(&buf[off + 19]);
+            const name = std.mem.span(name_ptr);
+            if (!std.mem.eql(u8, name, ".") and !std.mem.eql(u8, name, "..")) ctx.entry(name);
+            off += reclen;
+        }
+    }
+}
+
+test "forEachEntry lists a directory" {
+    try mkdirAll(".zig-cache/sys-test/list");
+    try writeFileAtomic(".zig-cache/sys-test/list/a.txt", "x");
+    try writeFileAtomic(".zig-cache/sys-test/list/b.txt", "y");
+    const C = struct {
+        names: u32 = 0,
+        saw_a: bool = false,
+        pub fn entry(self: *@This(), name: []const u8) void {
+            self.names += 1;
+            if (std.mem.eql(u8, name, "a.txt")) self.saw_a = true;
+        }
+    };
+    var c: C = .{};
+    try forEachEntry(".zig-cache/sys-test/list", &c);
+    try std.testing.expect(c.saw_a);
+    try std.testing.expect(c.names >= 2);
+}

@@ -112,6 +112,15 @@ pub const Fb = struct {
         return cx;
     }
 
+    /// Dark text on whatever is already lit (use after `fill`).
+    pub fn textOff(self: *Fb, x: i32, y: i32, s: []const u8, size: FontSize) void {
+        var cx = x;
+        for (s) |c| {
+            self.drawGlyph(cx, y, c, size, false);
+            cx += glyphWidth(size);
+        }
+    }
+
     pub fn textWidth(s: []const u8, size: FontSize) i32 {
         return @as(i32, @intCast(s.len)) * glyphWidth(size);
     }

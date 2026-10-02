@@ -3,6 +3,7 @@ const sys = @import("sys.zig");
 const log = @import("log.zig");
 const config = @import("config.zig");
 const selftest = @import("selftest.zig");
+const screens = @import("screens.zig");
 
 comptime {
     _ = @import("nmea.zig");
@@ -21,6 +22,11 @@ comptime {
     _ = @import("timeutil.zig");
     _ = @import("rx.zig");
     _ = @import("net.zig");
+    _ = @import("survey.zig");
+    _ = @import("basepos.zig");
+    _ = @import("rawlog.zig");
+    _ = @import("sysinfo.zig");
+    _ = @import("ui.zig");
 }
 
 pub const version = "0.1.0";
@@ -34,6 +40,7 @@ const usage =
     \\  (none)       run the daemon (role comes from the config file)
     \\  selftest     exercise UART, receiver, OLED and keys; stop the service first
     \\  check        validate the config file and exit
+    \\  screens      render every OLED page to the terminal (no hardware needed)
     \\  version      print the version
     \\
 ;
@@ -71,6 +78,10 @@ pub fn main(init: std.process.Init.Minimal) u8 {
     }
     if (std.mem.eql(u8, command, "version")) {
         log.out("rtkd {s}", .{version});
+        return 0;
+    }
+    if (std.mem.eql(u8, command, "screens")) {
+        screens.run();
         return 0;
     }
     var cfg: config.Config = .{};
