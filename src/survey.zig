@@ -417,9 +417,25 @@ test "CSV row is exactly the documented schema, extras after" {
     var code = config.Str(8){};
     code.set("PT") catch unreachable;
     const p = Point{
-        .id = 1, .unix = 1_000_000_000, .lat = 40.7128, .lon = -74.0060, .elev = 10.5, .ell_h = -20.25,
-        .hacc = 0.02, .vacc = 0.03, .fix = .rtk_fixed, .code = code, .epochs = 15, .sd_h = 0.004, .sd_v = 0.006,
-        .hdop = 0.8, .sats = 14, .corr_age = 1.2, .baseline = 1234.56, .ant_h = 2.0, .base_id = 3335,
+        .id = 1,
+        .unix = 1_000_000_000,
+        .lat = 40.7128,
+        .lon = -74.0060,
+        .elev = 10.5,
+        .ell_h = -20.25,
+        .hacc = 0.02,
+        .vacc = 0.03,
+        .fix = .rtk_fixed,
+        .code = code,
+        .epochs = 15,
+        .sd_h = 0.004,
+        .sd_v = 0.006,
+        .hdop = 0.8,
+        .sats = 14,
+        .corr_age = 1.2,
+        .baseline = 1234.56,
+        .ant_h = 2.0,
+        .base_id = 3335,
     };
     var buf: [320]u8 = undefined;
     try std.testing.expectEqualStrings(
@@ -440,9 +456,25 @@ test "job file: header once, ids continue after reopen, rows durable" {
     var code = config.Str(8){};
     code.set("PT") catch unreachable;
     var p = Point{
-        .id = 1, .unix = 1_000_000_000, .lat = 1, .lon = 2, .elev = 3, .ell_h = 3, .hacc = 0.01, .vacc = 0.02,
-        .fix = .rtk_fixed, .code = code, .epochs = 15, .sd_h = 0, .sd_v = 0, .hdop = 1, .sats = 10,
-        .corr_age = 1, .baseline = null, .ant_h = 2, .base_id = null,
+        .id = 1,
+        .unix = 1_000_000_000,
+        .lat = 1,
+        .lon = 2,
+        .elev = 3,
+        .ell_h = 3,
+        .hacc = 0.01,
+        .vacc = 0.02,
+        .fix = .rtk_fixed,
+        .code = code,
+        .epochs = 15,
+        .sd_h = 0,
+        .sd_v = 0,
+        .hdop = 1,
+        .sats = 10,
+        .corr_age = 1,
+        .baseline = null,
+        .ant_h = 2,
+        .base_id = null,
     };
     var j = try Job.open(dir, "T1");
     try std.testing.expectEqual(@as(u32, 1), j.next_id);

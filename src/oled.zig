@@ -64,7 +64,8 @@ pub const Oled = struct {
             0x02, 0x10, // column address 2
             0x40, // start line 0
             0xB0, // page 0
-            0x81, contrast,
+            0x81,
+            contrast,
             0xA1, // segment remap
             0xA6, // normal (not inverted)
             0xA8, 0x3F, // 1/64 duty

@@ -570,9 +570,9 @@ pub const App = struct {
     fn logStats(self: *App) void {
         const st = self.dm.stats;
         log.info("gnss: {s} fix={s} sv={d}/{d} | rx {d} B nmea {d}/{d} bad rtcm {d}/{d} bad junk {d} | tx dropped {d}", .{
-            @tagName(self.drv.state),                self.rx.liveQuality(sys.monotonicMs()).label(), self.rx.sats_used, self.rx.satsInView(),
-            self.rx_bytes,                           st.nmea_ok,                                      st.nmea_bad,           st.rtcm_ok,
-            st.rtcm_bad,                             st.junk_bytes,                                   self.tx.dropped,
+            @tagName(self.drv.state), self.rx.liveQuality(sys.monotonicMs()).label(), self.rx.sats_used, self.rx.satsInView(),
+            self.rx_bytes,            st.nmea_ok,                                     st.nmea_bad,       st.rtcm_ok,
+            st.rtcm_bad,              st.junk_bytes,                                  self.tx.dropped,
         });
         if (self.caster) |*c| log.info("caster: {d} rover(s) streaming, {d} frames / {d} B sent, {d} slow clients dropped", .{ c.streaming(), c.frames_out, c.bytes_out, c.dropped_slow });
         if (self.link) |*l| log.info("link: {s}, {d} frames / {d} B received, {d} connect(s), baseline {?d:.1} m", .{ @tagName(l.state), l.frames_in, l.bytes_in, l.connects, self.base_seen.baseline_m });

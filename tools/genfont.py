@@ -2,7 +2,7 @@
 """Regenerate src/font_data.zig from the X11 misc-fixed bitmap fonts (public domain).
 
 Dev-time only: the Pis never run this. Needs Pillow and xfonts-base installed.
-  usage: tools/genfont.py > src/font_data.zig
+  usage: tools/genfont.py > src/font_data.zig && zig fmt src/font_data.zig
 """
 import gzip, os, shutil, sys, tempfile
 from PIL import Image, ImageDraw, ImageFont
