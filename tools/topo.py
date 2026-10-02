@@ -297,6 +297,13 @@ def main(argv=None):
     with open(viewer_path) as fh:
         page = fh.read()
     page = page.replace("window.RTK_DATA = null;", "window.RTK_DATA = " + json.dumps(gj).replace("</", "<\\/") + ";", 1)
+    # The WebAssembly geometry core goes in as base64 so the export stays ONE offline file. If it is
+    # missing the page still works: it falls back to the JavaScript implementation (slower on big jobs).
+    wasm_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src", "map.wasm")
+    if os.path.exists(wasm_path):
+        import base64
+        with open(wasm_path, "rb") as fh:
+            page = page.replace("window.RTK_WASM = null;", 'window.RTK_WASM = "' + base64.b64encode(fh.read()).decode("ascii") + '";', 1)
     with open(a.out + ".html", "w") as fh:
         fh.write(page)
 

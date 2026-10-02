@@ -43,7 +43,7 @@ canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor
   <div id="stats"></div>
   <div id="legend"><div id="lmax"></div><div id="bar"></div><div id="lmin"></div></div>
 </div>
-<script>window.RTK_DATA = null;/*INLINE_DATA*/</script>
+<script>window.RTK_DATA = null;/*INLINE_DATA*/ window.RTK_WASM = null;/*INLINE_WASM*/</script>
 <script>
 // ==== geometry (testable; extracted by tools/test_viewer.js) ====
 function llToLocal(features) {
@@ -120,7 +120,8 @@ function buildTin(pts) {
   const good = tris.filter(([a, b, c]) => {
     const A = pts[a], B = pts[b], C = pts[c];
     const e = [Math.hypot(A.x - B.x, A.y - B.y), Math.hypot(B.x - C.x, B.y - C.y), Math.hypot(C.x - A.x, C.y - A.y)];
-    const s = (e[0] + e[1] + e[2]) / 2, area = Math.sqrt(Math.max(s * (s - e[0]) * (s - e[1]) * (s - e[2]), 0));
+    // area from the cross product: Heron's formula loses all precision on slivers
+    const s = (e[0] + e[1] + e[2]) / 2, area = Math.abs((B.x - A.x) * (C.y - A.y) - (C.x - A.x) * (B.y - A.y)) / 2;
     if (Math.max(...e) > maxEdge || area < 1e-6) return false;
     const circ = e[0] * e[1] * e[2] / (4 * area), inr = area / s;
     return inr / circ >= 0.04;
@@ -163,34 +164,153 @@ function contourLines(pts, tris, level) {
   segs.forEach((s, n) => { if (!used[n]) lines.push(walk(n, s[0])); });
   return lines;
 }
+// ---- backends: the same interface over the pure-JS reference above and over the Zig/WebAssembly core ----
+// load(ll, n): ll is a Float64Array of n rows [lon, lat, elevation]. Returns
+//   { n, pts: Float64Array(3n) local x,y,z, tris: Uint32Array(3m), lat0, lon0, spacing, maxEdge, bbox, zmin, zmax }
+// contours([[z, major], ...]) -> [{ z, major, xy: Float64Array }]; tint2d(zmin, zmax) -> Uint32Array 0xRRGGBB per triangle;
+// prep3d(view) -> { scr, ord, col } (screen x,y,depth per point; triangles back to front with shaded colours);
+// nearest(sx, sy, cx, cy, sc, w, h, maxd) -> index or -1.
+const RAMP = ['#2e7d4f', '#9bc17a', '#e8dba0', '#c9a26b', '#8c5a3c'];
+function tintRgb(t) {
+  const hx = h => [1, 3, 5].map(i => parseInt(h.substr(i, 2), 16));
+  t = Math.min(1, Math.max(0, t)) * (RAMP.length - 1);
+  const i = Math.min(RAMP.length - 2, Math.floor(t)), f = t - i, a = hx(RAMP[i]), b = hx(RAMP[i + 1]);
+  return a.map((v, k) => Math.round(v + (b[k] - v) * f));
+}
+const packRgb = c => (Math.min(255, c[0]) << 16) | (Math.min(255, c[1]) << 8) | Math.min(255, c[2]);
+
+const jsGeo = {
+  name: 'js',
+  load(ll, n) {
+    const feats = [];
+    for (let i = 0; i < n; i++) feats.push({ geometry: { type: 'Point', coordinates: [ll[3 * i], ll[3 * i + 1], ll[3 * i + 2]] } });
+    const r = llToLocal(feats), tin = buildTin(r.pts);
+    this.P = r.pts; this.T = tin.tris;
+    const pts = new Float64Array(3 * n), tris = new Uint32Array(3 * tin.tris.length);
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    r.pts.forEach((p, i) => {
+      pts[3 * i] = p.x; pts[3 * i + 1] = p.y; pts[3 * i + 2] = p.z;
+      x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y); z0 = Math.min(z0, p.z); z1 = Math.max(z1, p.z);
+    });
+    tin.tris.forEach((t, k) => { tris[3 * k] = t[0]; tris[3 * k + 1] = t[1]; tris[3 * k + 2] = t[2]; });
+    this.pts = pts; this.tris = tris;
+    return { n, pts, tris, lat0: r.lat0, lon0: r.lon0, spacing: tin.spacing, maxEdge: tin.maxEdge, bbox: [x0, x1, y0, y1], zmin: z0, zmax: z1 };
+  },
+  contours(levels) {
+    const out = [];
+    for (const [z, major] of levels) for (const line of contourLines(this.P, this.T, z)) {
+      const xy = new Float64Array(2 * line.length);
+      line.forEach((q, i) => { xy[2 * i] = q[0]; xy[2 * i + 1] = q[1]; });
+      out.push({ z, major, xy });
+    }
+    return out;
+  },
+  tint2d(zmin, zmax) {
+    const P = this.P, span = Math.max(zmax - zmin, 1e-9);
+    return Uint32Array.from(this.T, ([a, b, c]) => packRgb(tintRgb(((P[a].z + P[b].z + P[c].z) / 3 - zmin) / span)));
+  },
+  prep3d(v) {
+    const P = this.P, T = this.T, cyaw = Math.cos(v.yaw), syaw = Math.sin(v.yaw), cp = Math.cos(v.pitch), sp = Math.sin(v.pitch), zm = (v.zmin + v.zmax) / 2;
+    const scr = new Float64Array(3 * P.length);
+    P.forEach((p, i) => {
+      const X = p.x - v.cx, Y = p.y - v.cy, Z = (p.z - zm) * v.ex, x1 = X * cyaw - Y * syaw, y1 = X * syaw + Y * cyaw;
+      scr[3 * i] = v.w / 2 + x1 * v.sc; scr[3 * i + 1] = v.h / 2 - (y1 * sp + Z * cp) * v.sc; scr[3 * i + 2] = y1 * cp - Z * sp;
+    });
+    const L = [0.35, 0.55, 0.75], ln = Math.hypot(...L), l = L.map(q => q / ln), span = Math.max(v.zmax - v.zmin, 1e-9);
+    const items = T.map(([a, b, c], t) => {
+      const u = [P[b].x - P[a].x, P[b].y - P[a].y, (P[b].z - P[a].z) * v.ex], w = [P[c].x - P[a].x, P[c].y - P[a].y, (P[c].z - P[a].z) * v.ex];
+      let n = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]];
+      if (n[2] < 0) n = n.map(q => -q);
+      const nl = Math.hypot(...n) || 1, lam = Math.max(0.25, (n[0] * l[0] + n[1] * l[1] + n[2] * l[2]) / nl);
+      return { t, depth: (scr[3 * a + 2] + scr[3 * b + 2] + scr[3 * c + 2]) / 3, lam, tt: ((P[a].z + P[b].z + P[c].z) / 3 - v.zmin) / span };
+    }).sort((p, q) => p.depth - q.depth);
+    const ord = Uint32Array.from(items, it => it.t);
+    const col = Uint32Array.from(items, it => packRgb(tintRgb(it.tt).map(q => Math.round(q * (0.45 + 0.75 * it.lam)))));
+    return { scr, ord, col };
+  },
+  nearest(sx, sy, cx, cy, sc, w, h, maxd) {
+    let best = -1, bd = maxd;
+    this.P.forEach((p, i) => { const d = Math.hypot(w / 2 + (p.x - cx) * sc - sx, h / 2 - (p.y - cy) * sc - sy); if (d < bd) { bd = d; best = i; } });
+    return best;
+  },
+};
+
+// The WebAssembly core (src/geom, built to src/map.wasm). `inst` is an instantiated module.
+function makeWasmGeo(inst) {
+  const X = inst.exports, cap = X.max_points();
+  const f64 = (p, n) => new Float64Array(X.memory.buffer, p, n), u32 = (p, n) => new Uint32Array(X.memory.buffer, p, n);
+  let nPts = 0, nTri = 0;
+  return {
+    name: 'wasm', cap,
+    load(ll, n) {
+      if (n > cap) { const e = new Error('too many points: ' + n + ' (the viewer handles up to ' + cap + ')'); e.tooMany = true; throw e; }
+      f64(X.in_ptr(), 3 * n).set(ll.subarray(0, 3 * n));
+      const m = X.load(n);
+      if (m < 0) throw new Error('geometry core status ' + m);
+      nPts = n; nTri = m;
+      const I = f64(X.info_ptr(), X.info_len());
+      return { n, pts: f64(X.pts_ptr(), 3 * n).slice(), tris: u32(X.tris_ptr(), 3 * m).slice(), lat0: I[0], lon0: I[1], spacing: I[8], maxEdge: I[9],
+               bbox: [I[2], I[3], I[4], I[5]], zmin: I[6], zmax: I[7] };
+    },
+    contours(levels) {
+      X.contour_reset();
+      let overflow = false;
+      for (const [z, major] of levels) if (X.contour_level(z, major ? 1 : 0) < 0) { overflow = true; break; }
+      const nl = X.line_count(), st = u32(X.line_start_ptr(), nl), ln = u32(X.line_len_ptr(), nl), zz = f64(X.line_z_ptr(), nl), mj = u32(X.line_major_ptr(), nl);
+      const xy = f64(X.line_xy_ptr(), 2 * X.line_point_count()), out = [];
+      for (let i = 0; i < nl; i++) out.push({ z: zz[i], major: mj[i] === 1, xy: xy.slice(2 * st[i], 2 * (st[i] + ln[i])) });
+      out.overflow = overflow;
+      return out;
+    },
+    tint2d(zmin, zmax) { return u32(X.tint2d(zmin, zmax), nTri).slice(); },
+    prep3d(v) {
+      X.prep3d(v.cx, v.cy, v.sc, v.yaw, v.pitch, v.ex, v.zmin, v.zmax, v.w, v.h);
+      return { scr: f64(X.scr_ptr(), 3 * nPts), ord: u32(X.ord3_ptr(), nTri), col: u32(X.col3_ptr(), nTri) };  // views: valid until the next call
+    },
+    nearest(sx, sy, cx, cy, sc, w, h, maxd) { return X.nearest(sx, sy, cx, cy, sc, w, h, maxd); },
+  };
+}
+async function loadWasmGeo(b64, url) {
+  let bytes;
+  if (b64) { const s = atob(b64); bytes = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) bytes[i] = s.charCodeAt(i); }
+  else { const r = await fetch(url); if (!r.ok) throw new Error('HTTP ' + r.status); bytes = await r.arrayBuffer(); }
+  const { instance } = await WebAssembly.instantiate(bytes, {});
+  return makeWasmGeo(instance);
+}
 // ==== end geometry ====
 
 // ---------------------------------------------------------------- UI
 const $ = id => document.getElementById(id);
 const cv = $('cv'), ctx = cv.getContext('2d');
-let S = { pts: [], tris: [], mode: '2d', zmin: 0, zmax: 1, interval: 1, cx: 0, cy: 0, sc: 1, yaw: 0.6, pitch: 0.9, ex: 2, hover: -1, lat0: 0, lon0: 0, title: 'RTK map', contours: [] };
-const ramp = ['#2e7d4f', '#9bc17a', '#e8dba0', '#c9a26b', '#8c5a3c'];
-function hex(h) { return [1, 3, 5].map(i => parseInt(h.substr(i, 2), 16)); }
-function tint(t) {
-  t = Math.min(1, Math.max(0, t)) * (ramp.length - 1);
-  const i = Math.min(ramp.length - 2, Math.floor(t)), f = t - i, a = hex(ramp[i]), b = hex(ramp[i + 1]);
-  return a.map((v, k) => Math.round(v + (b[k] - v) * f));
-}
+let S = { pts: [], tris: new Uint32Array(0), mode: '2d', zmin: 0, zmax: 1, interval: 1, cx: 0, cy: 0, sc: 1, yaw: 0.6, pitch: 0.9, ex: 2, hover: -1, lat0: 0, lon0: 0, title: 'RTK map', contours: [], geo: jsGeo, tintCss: [], tinMs: 0, info: null };
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const rgbCss = c => 'rgb(' + (c >> 16) + ',' + ((c >> 8) & 255) + ',' + (c & 255) + ')';
 
 function load(gj) {
-  const feats = (gj && gj.features) || [];
-  const r = llToLocal(feats);
-  S.pts = r.pts; S.lat0 = r.lat0; S.lon0 = r.lon0;
-  if (r.pts.length < 3) { msg('Need at least 3 points to draw a surface (have ' + r.pts.length + ').'); }
+  const feats = ((gj && gj.features) || []).filter(x => x.geometry && x.geometry.type === 'Point' && Array.isArray(x.geometry.coordinates) &&
+    x.geometry.coordinates.length >= 3 && x.geometry.coordinates.slice(0, 3).every(Number.isFinite));
+  const ll = new Float64Array(3 * feats.length);
+  feats.forEach((f, i) => { ll[3 * i] = f.geometry.coordinates[0]; ll[3 * i + 1] = f.geometry.coordinates[1]; ll[3 * i + 2] = f.geometry.coordinates[2]; });
+  const t0 = performance.now();
+  let r;
+  try { r = S.geo.load(ll, feats.length); }
+  catch (e) {
+    if (e && e.tooMany) { S.pts = []; S.tris = new Uint32Array(0); S.contours = []; msg(e.message); stats(); draw(); return; }
+    console.warn('wasm geometry failed, using the JavaScript fallback:', e);
+    S.geo = jsGeo; r = S.geo.load(ll, feats.length);
+  }
+  S.tinMs = performance.now() - t0;
+  S.pts = feats.map((f, i) => {
+    const pr = f.properties || {};
+    return { x: r.pts[3 * i], y: r.pts[3 * i + 1], z: r.pts[3 * i + 2], id: String(pr.id || ''), code: pr.code || '', hacc: pr.h_acc, vacc: pr.v_acc, fix: pr.fix || '', time: pr.time || '' };
+  });
+  S.lat0 = r.lat0; S.lon0 = r.lon0; S.tris = r.tris; S.info = r; S.zmin = r.zmin; S.zmax = r.zmax;
+  if (!isFinite(S.zmin)) { S.zmin = 0; S.zmax = 1; }
+  if (S.pts.length < 3) msg('Need at least 3 points to draw a surface (have ' + S.pts.length + ').');
+  else if (!S.tris.length) msg('The points are collinear or too far apart to form a surface.');
   else msg('');
-  const tin = buildTin(S.pts);
-  S.tris = tin.tris;
-  let zmin = Infinity, zmax = -Infinity;
-  for (const p of S.pts) { zmin = Math.min(zmin, p.z); zmax = Math.max(zmax, p.z); }
-  S.zmin = zmin; S.zmax = zmax;
-  if (r.pts.length >= 3 && !S.tris.length) msg('The points are collinear or too far apart to form a surface.');
-  recontour(); fit(); stats(tin);
+  S.tintCss = S.tris.length ? Array.from(S.geo.tint2d(S.zmin, S.zmax), rgbCss) : [];
+  recontour(); fit(); stats();
 }
 function msg(t) { const m = $('msg'); m.style.display = t ? 'flex' : 'none'; m.textContent = t; }
 
@@ -199,23 +319,23 @@ function recontour() {
   S.interval = sel > 0 ? sel : niceStep(Math.max((S.zmax - S.zmin) / 12, 0.05));
   S.contours = [];
   if (!S.tris.length) return;
-  const start = Math.ceil(S.zmin / S.interval - 1e-9) * S.interval;
+  const start = Math.ceil(S.zmin / S.interval - 1e-9) * S.interval, levels = [];
   for (let z = start; z <= S.zmax + 1e-9; z += S.interval) {
     const zz = Math.round(z / S.interval) * S.interval;
-    const major = Math.abs(zz / (S.interval * 5) - Math.round(zz / (S.interval * 5))) < 1e-6;
-    for (const line of contourLines(S.pts, S.tris, zz)) S.contours.push({ z: zz, major, line });
+    levels.push([zz, Math.abs(zz / (S.interval * 5) - Math.round(zz / (S.interval * 5))) < 1e-6]);
   }
+  S.contours = S.geo.contours(levels);
+  if (S.contours.overflow) msg('Too many contour lines to draw; choose a larger interval.');
 }
 
-function stats(tin) {
-  const p = S.pts; if (!p.length) { $('stats').textContent = ''; return; }
-  const acc = p.map(q => q.hacc).filter(v => v != null).sort((a, b) => a - b);
-  const ext = (a) => Math.max(...a) - Math.min(...a);
-  $('stats').textContent = p.length + ' points · ' + ext(p.map(q => q.x)).toFixed(0) + ' × ' + ext(p.map(q => q.y)).toFixed(0) + ' m · relief ' +
+function stats() {
+  const p = S.pts; if (!p.length || !S.info) { $('stats').textContent = ''; return; }
+  const acc = p.map(q => q.hacc).filter(v => v != null).sort((a, b) => a - b), b = S.info.bbox;
+  $('stats').textContent = p.length + ' points · ' + (b[1] - b[0]).toFixed(0) + ' × ' + (b[3] - b[2]).toFixed(0) + ' m · relief ' +
     (S.zmax - S.zmin).toFixed(2) + ' m · contour ' + S.interval + ' m' + (acc.length ? ' · median H ±' + (acc[acc.length >> 1] * 100).toFixed(1) + ' cm' : '') +
-    (S.tris.length ? ' · ' + S.tris.length + ' triangles' : '');
+    (S.tris.length ? ' · ' + (S.tris.length / 3) + ' triangles' : '') + ' · TIN ' + S.tinMs.toFixed(S.tinMs < 10 ? 1 : 0) + ' ms (' + S.geo.name + ')';
   $('lmax').textContent = S.zmax.toFixed(2) + ' m'; $('lmin').textContent = S.zmin.toFixed(2) + ' m';
-  $('bar').style.background = 'linear-gradient(to right,' + ramp.join(',') + ')';
+  $('bar').style.background = 'linear-gradient(to right,' + RAMP.join(',') + ')';
 }
 
 function size() {
@@ -226,17 +346,15 @@ function size() {
 }
 function fit() {
   if (!S.pts.length) return;
-  const [w, h] = size();
-  const xs = S.pts.map(p => p.x), ys = S.pts.map(p => p.y);
-  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
-  S.cx = (x0 + x1) / 2; S.cy = (y0 + y1) / 2;
-  S.sc = 0.82 * Math.min(w / Math.max(x1 - x0, 1), h / Math.max(y1 - y0, 1));
+  const [w, h] = size(), b = S.info.bbox;
+  S.cx = (b[0] + b[1]) / 2; S.cy = (b[2] + b[3]) / 2;
+  S.sc = 0.82 * Math.min(w / Math.max(b[1] - b[0], 1), h / Math.max(b[3] - b[2], 1));
   draw();
 }
 
 // plan: world (x east, y north) -> screen
 function P2(x, y, w, h) { return [w / 2 + (x - S.cx) * S.sc, h / 2 - (y - S.cy) * S.sc]; }
-// 3D: orthographic, z scaled by exaggeration
+// 3D: orthographic, z scaled by exaggeration (points and triangles are projected by the geometry core; this is for contours)
 function P3(x, y, z, w, h) {
   const X = x - S.cx, Y = y - S.cy, Z = (z - (S.zmin + S.zmax) / 2) * S.ex;
   const cyaw = Math.cos(S.yaw), syaw = Math.sin(S.yaw), cp = Math.cos(S.pitch), sp = Math.sin(S.pitch);
@@ -251,30 +369,40 @@ function draw() {
   if (S.mode === '2d') draw2D(w, h); else draw3D(w, h);
 }
 
-function zt(z) { return (z - S.zmin) / Math.max(S.zmax - S.zmin, 1e-9); }
-
 function draw2D(w, h) {
-  const pts = S.pts;
-  if ($('cTint').checked) for (const [a, b, c] of S.tris) {
-    const t = zt((pts[a].z + pts[b].z + pts[c].z) / 3), col = tint(t);
-    ctx.fillStyle = 'rgb(' + col + ')'; ctx.globalAlpha = 0.55;
-    ctx.beginPath(); for (const [k, i] of [a, b, c].entries()) { const q = P2(pts[i].x, pts[i].y, w, h); k ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); }
-    ctx.closePath(); ctx.fill();
+  const pts = S.pts, T = S.tris, nT = T.length / 3;
+  if ($('cTint').checked) {
+    ctx.globalAlpha = 0.55;
+    for (let t = 0; t < nT; t++) {
+      const a = pts[T[3 * t]], b = pts[T[3 * t + 1]], c = pts[T[3 * t + 2]];
+      ctx.fillStyle = S.tintCss[t];
+      ctx.beginPath(); ctx.moveTo(w / 2 + (a.x - S.cx) * S.sc, h / 2 - (a.y - S.cy) * S.sc);
+      ctx.lineTo(w / 2 + (b.x - S.cx) * S.sc, h / 2 - (b.y - S.cy) * S.sc); ctx.lineTo(w / 2 + (c.x - S.cx) * S.sc, h / 2 - (c.y - S.cy) * S.sc);
+      ctx.closePath(); ctx.fill();
+    }
   }
   ctx.globalAlpha = 1;
   if ($('cTin').checked) {
     ctx.strokeStyle = css('--tin'); ctx.lineWidth = 0.6; ctx.beginPath();
-    for (const [a, b, c] of S.tris) { const A = P2(pts[a].x, pts[a].y, w, h), B = P2(pts[b].x, pts[b].y, w, h), C = P2(pts[c].x, pts[c].y, w, h); ctx.moveTo(A[0], A[1]); ctx.lineTo(B[0], B[1]); ctx.lineTo(C[0], C[1]); ctx.closePath(); }
+    for (let t = 0; t < nT; t++) {
+      const A = P2(pts[T[3 * t]].x, pts[T[3 * t]].y, w, h), B = P2(pts[T[3 * t + 1]].x, pts[T[3 * t + 1]].y, w, h), C = P2(pts[T[3 * t + 2]].x, pts[T[3 * t + 2]].y, w, h);
+      ctx.moveTo(A[0], A[1]); ctx.lineTo(B[0], B[1]); ctx.lineTo(C[0], C[1]); ctx.closePath();
+    }
     ctx.stroke();
   }
   if ($('cCont').checked) {
     for (const major of [false, true]) {
       ctx.strokeStyle = css(major ? '--major' : '--minor'); ctx.lineWidth = major ? 1.6 : 0.8; ctx.beginPath();
-      for (const c of S.contours) if (c.major === major) c.line.forEach((q, i) => { const s = P2(q[0], q[1], w, h); i ? ctx.lineTo(s[0], s[1]) : ctx.moveTo(s[0], s[1]); });
+      for (const c of S.contours) if (c.major === major) for (let i = 0; i < c.xy.length; i += 2) {
+        const s = P2(c.xy[i], c.xy[i + 1], w, h); i ? ctx.lineTo(s[0], s[1]) : ctx.moveTo(s[0], s[1]);
+      }
       ctx.stroke();
     }
     ctx.fillStyle = css('--major'); ctx.font = '11px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    for (const c of S.contours) if (c.major && c.line.length > 4) { const q = c.line[c.line.length >> 1], s = P2(q[0], q[1], w, h); ctx.fillStyle = css('--card'); ctx.fillRect(s[0] - 14, s[1] - 7, 28, 14); ctx.fillStyle = css('--major'); ctx.fillText(c.z.toFixed(c.z % 1 ? 1 : 0), s[0], s[1]); }
+    for (const c of S.contours) if (c.major && c.xy.length > 8) {
+      const k = (c.xy.length >> 2) * 2, s = P2(c.xy[k], c.xy[k + 1], w, h);
+      ctx.fillStyle = css('--card'); ctx.fillRect(s[0] - 14, s[1] - 7, 28, 14); ctx.fillStyle = css('--major'); ctx.fillText(c.z.toFixed(c.z % 1 ? 1 : 0), s[0], s[1]);
+    }
   }
   drawPoints2D(w, h);
   furniture(w, h);
@@ -311,27 +439,22 @@ function furniture(w, h) {
 }
 
 function draw3D(w, h) {
-  const pts = S.pts, L = [0.35, 0.55, 0.75];
-  const ln = Math.hypot(...L), light = L.map(v => v / ln);
-  const items = S.tris.map(([a, b, c]) => {
-    const A = P3(pts[a].x, pts[a].y, pts[a].z, w, h), B = P3(pts[b].x, pts[b].y, pts[b].z, w, h), C = P3(pts[c].x, pts[c].y, pts[c].z, w, h);
-    // shading from the world-space normal (z exaggerated)
-    const u = [pts[b].x - pts[a].x, pts[b].y - pts[a].y, (pts[b].z - pts[a].z) * S.ex], v = [pts[c].x - pts[a].x, pts[c].y - pts[a].y, (pts[c].z - pts[a].z) * S.ex];
-    let n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
-    if (n[2] < 0) n = n.map(q => -q);
-    const nl = Math.hypot(...n) || 1, lam = Math.max(0.25, (n[0] * light[0] + n[1] * light[1] + n[2] * light[2]) / nl);
-    return { A, B, C, depth: (A[2] + B[2] + C[2]) / 3, lam, t: zt((pts[a].z + pts[b].z + pts[c].z) / 3) };
-  }).sort((p, q) => p.depth - q.depth);
-  for (const it of items) {
-    const col = tint(it.t).map(v => Math.round(v * (0.45 + 0.75 * it.lam)));
-    ctx.fillStyle = 'rgb(' + col.map(v => Math.min(255, v)) + ')'; ctx.strokeStyle = 'rgba(0,0,0,0.18)'; ctx.lineWidth = 0.5;
-    ctx.beginPath(); ctx.moveTo(it.A[0], it.A[1]); ctx.lineTo(it.B[0], it.B[1]); ctx.lineTo(it.C[0], it.C[1]); ctx.closePath(); ctx.fill(); ctx.stroke();
+  const T = S.tris, v = S.geo.prep3d({ cx: S.cx, cy: S.cy, sc: S.sc, yaw: S.yaw, pitch: S.pitch, ex: S.ex, zmin: S.zmin, zmax: S.zmax, w, h });
+  ctx.strokeStyle = 'rgba(0,0,0,0.18)'; ctx.lineWidth = 0.5;
+  for (let k = 0; k < v.ord.length; k++) {
+    const t = v.ord[k], a = 3 * T[3 * t], b = 3 * T[3 * t + 1], c = 3 * T[3 * t + 2];
+    ctx.fillStyle = rgbCss(v.col[k]);
+    ctx.beginPath(); ctx.moveTo(v.scr[a], v.scr[a + 1]); ctx.lineTo(v.scr[b], v.scr[b + 1]); ctx.lineTo(v.scr[c], v.scr[c + 1]); ctx.closePath(); ctx.fill(); ctx.stroke();
   }
   if ($('cCont').checked) {
     ctx.lineWidth = 1;
-    for (const c of S.contours) { ctx.strokeStyle = c.major ? css('--major') : 'rgba(80,50,20,0.5)'; ctx.beginPath(); c.line.forEach((q, i) => { const s = P3(q[0], q[1], c.z, w, h); i ? ctx.lineTo(s[0], s[1]) : ctx.moveTo(s[0], s[1]); }); ctx.stroke(); }
+    for (const c of S.contours) {
+      ctx.strokeStyle = c.major ? css('--major') : 'rgba(80,50,20,0.5)'; ctx.beginPath();
+      for (let i = 0; i < c.xy.length; i += 2) { const s = P3(c.xy[i], c.xy[i + 1], c.z, w, h); i ? ctx.lineTo(s[0], s[1]) : ctx.moveTo(s[0], s[1]); }
+      ctx.stroke();
+    }
   }
-  if ($('cPts').checked) for (const p of pts) { const s = P3(p.x, p.y, p.z, w, h); ctx.fillStyle = css('--pt'); ctx.beginPath(); ctx.arc(s[0], s[1], 2.5, 0, 7); ctx.fill(); }
+  if ($('cPts').checked) { ctx.fillStyle = css('--pt'); for (let i = 0; i < S.pts.length; i++) { ctx.beginPath(); ctx.arc(v.scr[3 * i], v.scr[3 * i + 1], 2.5, 0, 7); ctx.fill(); } }
   ctx.fillStyle = css('--dim'); ctx.font = '11px system-ui'; ctx.textAlign = 'left';
   ctx.fillText('drag to rotate · wheel to zoom · vertical exaggeration x' + S.ex, 12, h - 66);
 }
@@ -360,8 +483,7 @@ cv.onpointermove = e => {
 };
 cv.onwheel = e => { e.preventDefault(); S.sc *= Math.exp(-e.deltaY * 0.0015); draw(); };
 function hover(mx, my, r) {
-  let best = -1, bd = 12;
-  S.pts.forEach((p, i) => { const s = P2(p.x, p.y, r.width, r.height), d = Math.hypot(s[0] - mx, s[1] - my); if (d < bd) { bd = d; best = i; } });
+  const best = S.pts.length ? S.geo.nearest(mx, my, S.cx, S.cy, S.sc, r.width, r.height, 12) : -1;
   const tip = $('tip');
   if (best !== S.hover) { S.hover = best; draw(); }
   if (best < 0) { tip.style.display = 'none'; return; }
@@ -388,6 +510,10 @@ async function start() {
   S.title = job || (gj && gj.title) || 'current job';
   $('title').textContent = (gj && gj.title) || ('RTK map · ' + S.title);
   document.title = $('title').textContent;
+  // WebAssembly geometry core when available (embedded in exported files, /map.wasm on the unit);
+  // the pure-JavaScript implementation above is the automatic fallback (also forced by ?nowasm).
+  const wasmP = (q.has('nowasm') || typeof WebAssembly !== 'object') ? Promise.resolve(null)
+    : loadWasmGeo(window.RTK_WASM, '/map.wasm').catch(e => { console.warn('WebAssembly core unavailable, using JavaScript:', e); return null; });
   if (!gj) {
     try {
       const r = await fetch(job ? '/jobs/' + encodeURIComponent(job) + '.geojson' : '/points.geojson', { cache: 'no-store' });
@@ -395,6 +521,7 @@ async function start() {
       gj = await r.json();
     } catch (e) { msg('Could not load points: ' + (e && e.message ? e.message : e)); return; }
   }
+  S.geo = (await wasmP) || jsGeo;
   applyHash(); load(gj);
 }
 if (typeof document !== 'undefined' && document.getElementById('cv')) start();

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Tests for tools/topo.py. Run: python3 -m unittest tools/test_topo.py"""
-import csv, math, os, sys, tempfile, unittest
+import base64, csv, math, os, re, sys, tempfile, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import numpy as np
 import topo
@@ -131,6 +131,16 @@ class Tool(unittest.TestCase):
             page = fh.read()
         self.assertIn('"FeatureCollection"', page)
         self.assertNotIn("window.RTK_DATA = null;/*INLINE_DATA*/", page)
+        # the WebAssembly core is embedded (single offline file): base64 of the committed src/map.wasm
+        self.assertNotIn("window.RTK_WASM = null;", page)
+        m = re.search(r'window\.RTK_WASM = "([A-Za-z0-9+/=]+)";', page)
+        self.assertIsNotNone(m)
+        wasm = base64.b64decode(m.group(1))
+        self.assertEqual(wasm[:8], b"\x00asm\x01\x00\x00\x00")
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src", "map.wasm"), "rb") as fh:
+            self.assertEqual(wasm, fh.read())
+        self.assertNotIn("src=", page)  # no external script or asset references: it works offline
+        self.assertNotIn("http://", page.replace("http://www.w3.org", ""))
         self.assertEqual(open(out + ".pdf", "rb").read(5), b"%PDF-")
         with open(out + ".dxf") as fh:
             dxf = fh.read()

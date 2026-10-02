@@ -174,6 +174,7 @@ pub const Server = struct {
 
         if (std.mem.eql(u8, path, "/")) return reply(c, "200 OK", "text/html; charset=utf-8", page_html);
         if (std.mem.eql(u8, path, "/map")) return reply(c, "200 OK", "text/html; charset=utf-8", viewer_html);
+        if (std.mem.eql(u8, path, "/map.wasm")) return reply(c, "200 OK", "application/wasm", viewer_wasm);
         if (std.mem.eql(u8, path, "/status.json")) {
             var b: [1536]u8 = undefined;
             return reply(c, "200 OK", "application/json", ctx.statusJson(&b));
@@ -267,6 +268,15 @@ fn appendFmt(out: []u8, n: usize, comptime fmt: []const u8, args: anytype) usize
 const page_html = @embedFile("page.html");
 /// Plan + 3D viewer; reads /points.geojson (or /jobs/<name>.geojson for ?job=<name>) in the browser.
 const viewer_html = @embedFile("viewer.html");
+/// The viewer's geometry core (Zig compiled to WebAssembly, built by `zig build wasm`, see src/geom).
+/// The Pi only serves these bytes; the browser does the triangulation.
+const viewer_wasm = @embedFile("map.wasm");
+
+comptime {
+    // Everything goes through reply(), whose buffer is out_cap including the headers.
+    std.debug.assert(viewer_html.len < out_cap - 1024);
+    std.debug.assert(viewer_wasm.len < out_cap - 1024);
+}
 
 // ---- tests ---------------------------------------------------------------------------------------------
 
@@ -346,6 +356,20 @@ test "serves page, status, jobs and refuses everything else" {
     try std.testing.expect(std.mem.indexOf(u8, buf[0..n], "RTK map viewer") != null);
     try std.testing.expect(std.mem.indexOf(u8, buf[0..n], "function delaunay") != null);
     try std.testing.expect(std.mem.endsWith(u8, buf[0..n], "</html>\n"));
+
+    // the geometry core: served as application/wasm, byte-identical to the embedded file, valid wasm header
+    n = try fetch(p, "GET /map.wasm HTTP/1.0\r\n\r\n", &srv, &buf);
+    try std.testing.expect(std.mem.startsWith(u8, buf[0..n], "HTTP/1.0 200 OK"));
+    try std.testing.expect(std.mem.indexOf(u8, buf[0..n], "Content-Type: application/wasm\r\n") != null);
+    var clen: [48]u8 = undefined;
+    try std.testing.expect(std.mem.indexOf(u8, buf[0..n], std.fmt.bufPrint(&clen, "Content-Length: {d}\r\n", .{viewer_wasm.len}) catch unreachable) != null);
+    const body_at = std.mem.indexOf(u8, buf[0..n], "\r\n\r\n").? + 4;
+    try std.testing.expectEqualSlices(u8, "\x00asm\x01\x00\x00\x00", buf[body_at..][0..8]);
+    try std.testing.expectEqualSlices(u8, viewer_wasm, buf[body_at..n]);
+    // the page asks for exactly that URL
+    try std.testing.expect(std.mem.indexOf(u8, viewer_html, "'/map.wasm'") != null);
+    n = try fetch(p, "POST /map.wasm HTTP/1.0\r\n\r\n", &srv, &buf);
+    try std.testing.expect(std.mem.startsWith(u8, buf[0..n], "HTTP/1.0 404"));
 
     n = try fetch(p, "GET /status.json HTTP/1.1\r\nHost: x\r\n\r\n", &srv, &buf);
     try std.testing.expect(std.mem.endsWith(u8, buf[0..n], "{\"role\":\"rover\",\"fix\":\"RTK FIX\"}"));
