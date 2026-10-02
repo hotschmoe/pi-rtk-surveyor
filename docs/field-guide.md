@@ -23,7 +23,8 @@
    power bank. Write down in your notebook: base mark, antenna height above the mark, time, weather.
 4. **Base: wait for BASE READY.** The screen goes through the bring-up list, then `NO SKY` until it
    sees satellites, then `SURVEYING` with a progress bar (default 15 minutes, `base.survey_secs`;
-   it also needs the accuracy limit met), then `BASE READY` in inverted type. Do not touch the tripod.
+   it also needs the accuracy limit met, and the seconds counter does not start until it is: in a poor
+   site that can take several minutes before the counter even moves, which is normal), then `BASE READY` in inverted type. Do not touch the tripod.
    Use the time to set up the rover and walk the site. The base stores this position; every later
    power-up on the same monument reuses it.
 5. **Rover: power on** (any time, before or after the base is ready). Wait for `LINK OK RTK2` on

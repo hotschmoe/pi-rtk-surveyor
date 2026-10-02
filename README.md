@@ -15,8 +15,9 @@ runs on both units; the role comes from `/etc/rtk/rtk.conf`.
 ## Status
 
 Verified on the two real units (rtk1 = rover/LC29H-DA, rtk2 = base/LC29H-BS) and by
-the test suites. The units cannot get a fix indoors, so everything that needs
-satellites is verified against a simulated receiver, not sky.
+the test suites. Indoors the units cannot get a fix, so those paths were first verified against
+a simulated receiver; on 2026-10-02 both units were then run **outdoors under sky** (between two
+concrete buildings, antennas a few metres apart) and the whole chain worked.
 
 | Capability | How it is verified |
 |---|---|
@@ -25,7 +26,7 @@ satellites is verified against a simulated receiver, not sky.
 | Base caster, discovery beacon, rover link, reconnect | on hardware over Wi-Fi (base restart recovered live); loopback tests; sustained 6 frames/s, 0 loss |
 | OLED (SH1106), 8 keys, UART | `rtkd selftest` on both units; screens reviewed with `rtkd screens`. **Not yet confirmed by eye** that the panel shows the picture and rotation correctly |
 | Point occupation, CSV, jobs, base position store | unit tests + simulated end-to-end (below) |
-| RTK fix, survey-in completion, accuracy | **simulated receiver only** (needs sky on hardware) |
+| RTK fix, survey-in completion, point capture | **on hardware, outdoors:** rover went float to RTK FIX (5 mm estimated error, 29 satellites) through the real corrections link; the base survey-in completed and stored its position; two points marked on the same spot agreed to 9 mm horizontally and vertically. Absolute accuracy and open-field performance not yet measured |
 | Web status/downloads, phone MARK | tests + on hardware (status pages); MARK via the simulator |
 | Keypad power-off (K1+K3) | logic and unit files verified; **not triggered** on hardware |
 | Topo sheet (DXF, PNG/SVG, PNEZD) | unit tests, plus a full simulated site (`examples/`) |
@@ -82,8 +83,10 @@ docs/           setup, workflow, field guide, hardware
 
 ## Footprint
 
-Measured on the units (ReleaseSafe, stripped): **494 KB** binary, **520 kB RSS**, one thread,
-about **0.6% of one core** while relaying 6 RTCM frames per second. Other modes, same source:
+Measured on the units (ReleaseSafe, stripped): **494 KB** binary, **~550 kB RSS**, one thread.
+With real satellites in view CPU is about **1.1% (rover) to 1.4% (base) of one core**; the base sends
+~835 B/s of corrections (6 frames/s) and its receiver UART runs at about a fifth of capacity. SoC
+temperature was 49-52 C outdoors in the afternoon with no throttling and no under-voltage. Other modes, same source:
 ReleaseFast 413 KB, ReleaseSmall 220 KB. The deploy build is ReleaseSafe on purpose: the daemon
 is I/O bound, so the safety checks (bounds, overflow) cost nothing measurable, and a bug becomes a
 panic and a 3-second systemd restart rather than silently wrong survey data.

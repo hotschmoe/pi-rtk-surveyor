@@ -102,7 +102,15 @@ Verified against the live modules (reply formats are what `src/lc29h.zig` expect
 | Station position (1005) | `$PAIR434,1` (`435` reads) | |
 | Ephemeris messages | `$PAIR436,0` (`437` reads) | |
 
-The module's survey status field order (version, TOW, valid, _, _, observed s,
-configured s, X, Y, Z, accuracy) is inferred from output captured before any
-satellites were tracked; the `valid` states 0/1/2 (idle/in progress/complete) and
-the field positions will be confirmed the first time a survey runs under sky.
+Confirmed with the receiver under sky (2026-10-02). A live line from the base during survey-in:
+
+```
+$PQTMSVINSTATUS,1,2438,1,,01,0,120,-1972872.7262,-4947719.8294,3497292.8919,12.0*20
+                 ver TOW valid _ ?? obs cfg  X(m)         Y(m)         Z(m)      acc(m)
+```
+
+`valid` 1 = in progress, 2 = complete (rtkd stores the base position when it reaches 2). The
+**observed-seconds counter stays 0 until the running accuracy estimate is below the configured limit**:
+between two concrete buildings the estimate fell from 12 m to 4.4 m in about 4 minutes, and only then did
+the counter run 0 to 120 s and the survey complete. So the accuracy limit, not `survey_secs`, dominates the
+wait in poor conditions. The BS reports GGA quality 2 (DGPS) once its position is fixed.
