@@ -18,6 +18,9 @@ comptime {
     _ = @import("gpio.zig");
     _ = @import("oled.zig");
     _ = @import("input.zig");
+    _ = @import("timeutil.zig");
+    _ = @import("rx.zig");
+    _ = @import("net.zig");
 }
 
 pub const version = "0.1.0";

@@ -3,6 +3,7 @@
 //! terminal they get a monotonic timestamp instead.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const linux = std.os.linux;
 const sys = @import("sys.zig");
 
@@ -20,6 +21,7 @@ fn ttyCheck() bool {
 }
 
 fn emit(level: u8, tag: []const u8, comptime fmt: []const u8, args: anytype) void {
+    if (builtin.is_test) return; // keep `zig build test` output clean
     var buf: [384]u8 = undefined;
     var n: usize = 0;
     if (ttyCheck()) {
