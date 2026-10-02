@@ -219,7 +219,7 @@ fn roverStatus(fb: *Fb, v: *const View) void {
     } else {
         _ = fb.text(2, rowY(0), label, .large);
     }
-    put(fb, 80, rowY(0), "SV {d}/{d}", .{ v.rx.sats_used, v.rx.satsInView() });
+    put(fb, 80, rowY(0), "SV {d}/{d}", .{ v.rx.satsUsed(), v.rx.satsInView() });
     if (v.rx.hdop) |h| put(fb, 80, rowY(1) + 2, "HD {d:.1}", .{h}) else put(fb, 80, rowY(1) + 2, "HD --", .{});
     var hb: [12]u8 = undefined;
     var vb: [12]u8 = undefined;
@@ -317,7 +317,7 @@ fn occupying(fb: *Fb, v: *const View) void {
 fn baseStatus(fb: *Fb, v: *const View) void {
     const sv = v.rx.svin;
     const done = (sv != null and sv.?.state == 2) or v.base.from_store;
-    const sats = v.rx.sats_used;
+    const sats = v.rx.satsUsed();
     const label: []const u8 = if (done) "BASE READY" else if (sats == 0) "NO SKY" else "SURVEYING";
     const w: i32 = Fb.textWidth(label, .large) + 4;
     if (done) {

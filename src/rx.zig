@@ -25,6 +25,14 @@ pub const Rx = struct {
     /// Increments once per new GGA epoch.
     epoch: u32 = 0,
 
+    // Satellites used, counted as distinct (system, PRN) from the GSA sentences. GGA's own count
+    // is per *signal* on this receiver (L1 and L5 of one satellite count twice), so it can exceed
+    // the number of satellites in view. GSA arrive after their GGA, so the mask is committed when
+    // the next epoch begins.
+    used_mask: [8][4]u64 = [_][4]u64{[_]u64{0} ** 4} ** 8,
+    gsa_seen: bool = false,
+    sats_used_sv: ?u8 = null,
+
     // GSA
     fix_mode: u8 = 1,
     pdop: ?f32 = null,
@@ -68,6 +76,7 @@ pub const Rx = struct {
                 if (g.utc_s != self.gga_utc_s) {
                     self.gga_utc_s = g.utc_s;
                     self.epoch +%= 1;
+                    self.commitUsed();
                 }
             },
             .rmc => |r| {
@@ -79,6 +88,10 @@ pub const Rx = struct {
                 }
             },
             .gsa => |a| {
+                self.gsa_seen = true;
+                for (a.ids) |id| if (id != 0) {
+                    self.used_mask[a.system & 7][id >> 6] |= @as(u64, 1) << @intCast(id & 63);
+                };
                 self.fix_mode = a.mode;
                 self.pdop = a.pdop;
                 self.vdop = a.vdop;
@@ -94,6 +107,23 @@ pub const Rx = struct {
             },
             else => {},
         }
+    }
+
+    fn commitUsed(self: *Rx) void {
+        if (self.gsa_seen) {
+            var n: u32 = 0;
+            for (self.used_mask) |row| for (row) |w| {
+                n += @popCount(w);
+            };
+            self.sats_used_sv = @intCast(@min(n, 255));
+        } else self.sats_used_sv = null;
+        self.used_mask = [_][4]u64{[_]u64{0} ** 4} ** 8;
+        self.gsa_seen = false;
+    }
+
+    /// Distinct satellites used in the last complete epoch; falls back to GGA's count before any GSA.
+    pub fn satsUsed(self: *const Rx) u8 {
+        return self.sats_used_sv orelse self.sats_used;
     }
 
     fn setView(self: *Rx, v: nmea.Gsv) void {
@@ -203,4 +233,25 @@ test "RTK fix epoch: position, accuracy, time, staleness" {
     try std.testing.expectEqual(@as(u32, 1), rx.epoch);
     rx.onNmea("GNGGA,092751.000,5321.6802,N,00630.3372,W,4,12,0.8,61.7,M,55.2,M,1.3,0000", 1100);
     try std.testing.expectEqual(@as(u32, 2), rx.epoch);
+}
+
+test "satellites used: distinct (system, PRN) across GSA sentences, committed per epoch; GGA counts signals" {
+    var rx: Rx = .{};
+    // epoch 1: GPS 01-04 on two GSA lines (one repeated PRN), Galileo 01-02 (same PRNs, different system)
+    rx.onNmea("GNGGA,092750.000,5321.6802,N,00630.3372,W,4,16,0.8,61.7,M,55.2,M,1.2,0000", 100);
+    rx.onNmea("GNGSA,A,3,01,02,03,,,,,,,,,,1.4,0.8,1.1,1", 100);
+    rx.onNmea("GNGSA,A,3,03,04,,,,,,,,,,,1.4,0.8,1.1,1", 100);
+    rx.onNmea("GNGSA,A,3,01,02,,,,,,,,,,,1.4,0.8,1.1,3", 100);
+    try std.testing.expectEqual(@as(u8, 16), rx.satsUsed()); // not committed yet: still the GGA count
+    // epoch 2 begins: epoch 1 is committed. 4 GPS + 2 Galileo = 6 distinct satellites (GGA said 16 signals).
+    rx.onNmea("GNGGA,092751.000,5321.6802,N,00630.3372,W,4,16,0.8,61.7,M,55.2,M,1.3,0000", 1100);
+    try std.testing.expectEqual(@as(u8, 6), rx.satsUsed());
+    try std.testing.expectEqual(@as(u8, 16), rx.sats_used);
+    // epoch 2 has no GSA at all: epoch 3 falls back to the GGA count rather than showing a stale 6.
+    rx.onNmea("GNGGA,092752.000,5321.6802,N,00630.3372,W,4,12,0.8,61.7,M,55.2,M,1.3,0000", 2100);
+    try std.testing.expectEqual(@as(u8, 12), rx.satsUsed());
+    // an epoch with GSA but no fix reports zero satellites used
+    rx.onNmea("GNGSA,A,1,,,,,,,,,,,,,99.99,99.99,99.99,1", 2100);
+    rx.onNmea("GNGGA,092753.000,,,,,0,00,99.99,,M,,M,,", 3100);
+    try std.testing.expectEqual(@as(u8, 0), rx.satsUsed());
 }

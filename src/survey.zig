@@ -143,7 +143,7 @@ pub const Occupation = struct {
             self.epe_v_sum += rx.vacc(now_ms) orelse 0;
         }
         self.hdop_sum += rx.hdop orelse 0;
-        self.sats_min = @min(self.sats_min, rx.sats_used);
+        self.sats_min = @min(self.sats_min, rx.satsUsed());
         self.age_max = @max(self.age_max, rx.diff_age orelse 0);
     }
 

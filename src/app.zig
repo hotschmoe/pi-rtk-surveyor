@@ -193,6 +193,14 @@ pub const App = struct {
     in_rate: Rate = .{},
     last_stats_ms: u64 = 0,
     last_drv_state: lc29h.State = .probing,
+
+    // fix-state tracking, for the journal and the web status
+    start_ms: u64 = 0,
+    last_q: nmea.Quality = .none,
+    q_since_ms: u64 = 0,
+    first_fix_s: ?u32 = null,
+    last_epoch_seen: u32 = 0,
+    q_counts: [9]u32 = [_]u32{0} ** 9,
     http: ?http.Server = null,
     combo_since_ms: u64 = 0,
     powering_off: bool = false,
@@ -221,6 +229,8 @@ pub const App = struct {
         const cfg = self.cfg;
         log.info("rtkd {s} starting: role {s}, unit {s}", .{ version, @tagName(self.role), cfg.name.get() });
 
+        self.start_ms = sys.monotonicMs();
+        self.q_since_ms = self.start_ms;
         self.timer_fd = try sys.timerfd(tick_ms);
         try self.ep.add(self.timer_fd, K.timer, sys.IN);
         self.sig_fd = try sys.shutdownSignalFd();
@@ -469,12 +479,35 @@ pub const App = struct {
         log.debug("<- ${s}", .{body});
         self.drv.onNmea(body, now, self);
         self.rx.onNmea(body, now);
+        if (self.rx.epoch != self.last_epoch_seen) {
+            self.last_epoch_seen = self.rx.epoch;
+            self.noteEpoch(now);
+        }
         if (body.len > 5 and std.mem.eql(u8, body[2..5], "GGA") and self.rx.quality != .none) {
             const n = @min(body.len, self.gga.len);
             @memcpy(self.gga[0..n], body[0..n]);
             self.gga_len = n;
         }
         if (self.role == .rover) self.occ.onEpoch(&self.rx, now);
+    }
+
+    /// Once per GGA epoch: count the fix quality, and log every change of state with how long the
+    /// previous state lasted. A fix that flickers shows up in the journal instead of only on the screen.
+    fn noteEpoch(self: *App, now: u64) void {
+        const q = self.rx.quality;
+        self.q_counts[@min(@intFromEnum(q), self.q_counts.len - 1)] += 1;
+        if (q == self.last_q) return;
+        log.info("fix: {s} -> {s} after {d} s ({d} satellites, hdop {?d:.1}, est. error {?d:.3} m)", .{
+            self.last_q.label(), q.label(),    (now -| self.q_since_ms) / 1000,
+            self.rx.satsUsed(),  self.rx.hdop, self.rx.hacc(now),
+        });
+        if (q == .rtk_fixed and self.first_fix_s == null) {
+            const t: u32 = @intCast((now -| self.start_ms) / 1000);
+            self.first_fix_s = t;
+            log.info("fix: first RTK FIX {d} s after start", .{t});
+        }
+        self.last_q = q;
+        self.q_since_ms = now;
     }
 
     fn onUartRtcm(self: *App, frame: []const u8) void {
@@ -570,10 +603,21 @@ pub const App = struct {
     fn logStats(self: *App) void {
         const st = self.dm.stats;
         log.info("gnss: {s} fix={s} sv={d}/{d} | rx {d} B nmea {d}/{d} bad rtcm {d}/{d} bad junk {d} | tx dropped {d}", .{
-            @tagName(self.drv.state), self.rx.liveQuality(sys.monotonicMs()).label(), self.rx.sats_used, self.rx.satsInView(),
-            self.rx_bytes,            st.nmea_ok,                                     st.nmea_bad,       st.rtcm_ok,
+            @tagName(self.drv.state), self.rx.liveQuality(sys.monotonicMs()).label(), self.rx.satsUsed(), self.rx.satsInView(),
+            self.rx_bytes,            st.nmea_ok,                                     st.nmea_bad,        st.rtcm_ok,
             st.rtcm_bad,              st.junk_bytes,                                  self.tx.dropped,
         });
+        {
+            var buf: [96]u8 = undefined;
+            var n: usize = 0;
+            for (self.q_counts, 0..) |c, i| {
+                if (c == 0) continue;
+                const part = std.fmt.bufPrint(buf[n..], "{s}{s} {d}", .{ if (n > 0) ", " else "", @as(nmea.Quality, @enumFromInt(i)).label(), c }) catch break;
+                n += part.len;
+            }
+            log.info("fix: epochs in the last {d} s: {s}", .{ stats_ms / 1000, buf[0..n] });
+            self.q_counts = [_]u32{0} ** 9;
+        }
         if (self.caster) |*c| log.info("caster: {d} rover(s) streaming, {d} frames / {d} B sent, {d} slow clients dropped", .{ c.streaming(), c.frames_out, c.bytes_out, c.dropped_slow });
         if (self.link) |*l| log.info("link: {s}, {d} frames / {d} B received, {d} connect(s), baseline {?d:.1} m", .{ @tagName(l.state), l.frames_in, l.bytes_in, l.connects, self.base_seen.baseline_m });
     }
@@ -797,7 +841,7 @@ pub const App = struct {
         }.go;
         put(buf, &n, "{{\"unit\":\"{s}\",\"role\":\"{s}\",\"version\":\"{s}\",", .{ self.cfg.name.get(), @tagName(self.role), version });
         if (rx.unixTime()) |u| put(buf, &n, "\"utc\":\"{s}\",", .{timeutil.iso(&utc_buf, u)}) else put(buf, &n, "\"utc\":null,", .{});
-        put(buf, &n, "\"fix\":\"{s}\",\"sats_used\":{d},\"sats_view\":{d},\"hdop\":{?d:.1},", .{ rx.liveQuality(now).label(), rx.sats_used, rx.satsInView(), rx.hdop });
+        put(buf, &n, "\"fix\":\"{s}\",\"fix_since_s\":{d},\"first_fix_s\":{?d},\"sats_used\":{d},\"sig_used\":{d},\"sats_view\":{d},\"hdop\":{?d:.1},", .{ rx.liveQuality(now).label(), (now -| self.q_since_ms) / 1000, self.first_fix_s, rx.satsUsed(), rx.sats_used, rx.satsInView(), rx.hdop });
         put(buf, &n, "\"lat\":{?d:.9},\"lon\":{?d:.9},\"alt_msl\":{?d:.3},\"hacc\":{?d:.3},\"vacc\":{?d:.3},", .{ rx.lat, rx.lon, rx.alt_msl, rx.hacc(now), rx.vacc(now) });
         if (self.link) |*l| {
             const age: ?u64 = if (l.last_frame_ms == 0) null else now -| l.last_frame_ms;
@@ -808,7 +852,7 @@ pub const App = struct {
         }
         if (self.role == .base) {
             const sv = rx.svin;
-            const state: []const u8 = if ((sv != null and sv.?.state == 2) or self.from_store) "ready" else if (rx.sats_used == 0) "no sky" else "surveying";
+            const state: []const u8 = if ((sv != null and sv.?.state == 2) or self.from_store) "ready" else if (rx.satsUsed() == 0) "no sky" else "surveying";
             const p = self.baseLlh();
             const frames: u64 = if (self.caster) |*c| c.frames_out else 0;
             const rovers: u8 = if (self.caster) |*c| c.streaming() else 0;
@@ -1174,4 +1218,30 @@ test "occupation keeps the panel awake and cancel/accept keys do nothing when id
     defer sys.close(a.ep.fd);
     a.onKey(.key2, 100); // cancel with nothing running: harmless
     try std.testing.expect(a.toast == null);
+}
+
+test "fix-state tracking: transitions, first-fix time and per-period epoch counts" {
+    var cfg: config.Config = undefined;
+    var a = try testApp(.rover, &cfg, ".zig-cache/app-test-fix");
+    defer sys.close(a.ep.fd);
+    try std.testing.expectEqual(@as(?u32, null), a.first_fix_s);
+    feed(&a, 0, 1); // single
+    feed(&a, 1, 5); // float
+    feed(&a, 2, 5);
+    try std.testing.expectEqual(@as(?u32, null), a.first_fix_s);
+    feed(&a, 3, 4); // fixed
+    try std.testing.expect(a.first_fix_s != null);
+    try std.testing.expectEqual(nmea.Quality.rtk_fixed, a.last_q);
+    feed(&a, 4, 4);
+    feed(&a, 5, 1); // lost it
+    feed(&a, 6, 4); // and regained: first_fix_s must not move
+    const first = a.first_fix_s;
+    feed(&a, 7, 4);
+    try std.testing.expectEqual(first, a.first_fix_s);
+    try std.testing.expectEqual(@as(u32, 2), a.q_counts[1]); // single x2
+    try std.testing.expectEqual(@as(u32, 2), a.q_counts[5]); // float x2
+    try std.testing.expectEqual(@as(u32, 4), a.q_counts[4]); // fixed x4
+    // a repeated sentence of the same epoch is not counted twice
+    a.onNmea("GNGGA,092707.000,5321.6802,N,00630.3372,W,4,12,0.8,61.7,M,55.2,M,1.2,0000");
+    try std.testing.expectEqual(@as(u32, 4), a.q_counts[4]);
 }

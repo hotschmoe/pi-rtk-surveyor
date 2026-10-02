@@ -93,6 +93,9 @@ pub const Rmc = struct {
 pub const Gsa = struct {
     /// 1 = none, 2 = 2D, 3 = 3D.
     mode: u8,
+    /// PRNs of the satellites used (0 = empty slot) and the NMEA system ID (1 GPS, 2 GLONASS, ...; 0 if absent).
+    ids: [12]u8,
+    system: u8,
     pdop: ?f32,
     hdop: ?f32,
     vdop: ?f32,
@@ -281,12 +284,15 @@ fn parseRmc(it: *std.mem.SplitIterator(u8, .scalar)) Msg {
 fn parseGsa(it: *std.mem.SplitIterator(u8, .scalar)) Msg {
     _ = field(it); // A/M
     const mode = int(u8, field(it)) orelse 1;
-    for (0..12) |_| _ = field(it); // satellite IDs
+    var ids: [12]u8 = undefined;
+    for (&ids) |*id| id.* = int(u8, field(it)) orelse 0;
     return .{ .gsa = .{
         .mode = mode,
+        .ids = ids,
         .pdop = num(f32, field(it)),
         .hdop = num(f32, field(it)),
         .vdop = num(f32, field(it)),
+        .system = int(u8, field(it)) orelse 0,
     } };
 }
 
@@ -383,8 +389,14 @@ test "RMC date and validity" {
 }
 
 test "GSA, GSV" {
-    const a = parse("GNGSA,A,3,01,02,03,04,05,06,07,08,09,10,11,12,1.4,0.8,1.1,1").gsa;
+    const a = parse("GNGSA,A,3,01,02,03,04,05,06,07,08,09,10,,,1.4,0.8,1.1,1").gsa;
     try std.testing.expectEqual(@as(u8, 3), a.mode);
+    try std.testing.expectEqual(@as(u8, 1), a.system);
+    try std.testing.expectEqual(@as(u8, 10), a.ids[9]);
+    try std.testing.expectEqual(@as(u8, 0), a.ids[10]); // empty slot
+    const none = parse("GNGSA,A,1,,,,,,,,,,,,,99.99,99.99,99.99,3").gsa;
+    try std.testing.expectEqual(@as(u8, 0), none.ids[0]);
+    try std.testing.expectEqual(@as(u8, 3), none.system);
     try std.testing.expectApproxEqAbs(@as(f32, 0.8), a.hdop.?, 1e-6);
     const s = parse("GPGSV,1,1,00,1").gsv;
     try std.testing.expectEqualStrings("GP", &s.talker);
