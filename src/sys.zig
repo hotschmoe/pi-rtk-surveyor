@@ -286,3 +286,8 @@ test "atomic file write, read-back, mkdirAll, exists" {
     try std.testing.expect(!exists(path));
     try std.testing.expectError(error.NotFound, open("/nonexistent/zzz", .{}, 0));
 }
+
+pub fn sleepMs(ms: u32) void {
+    const ts = linux.timespec{ .sec = @intCast(ms / 1000), .nsec = @intCast((ms % 1000) * 1_000_000) };
+    _ = linux.nanosleep(&ts, null);
+}
