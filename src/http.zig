@@ -17,6 +17,9 @@ const req_cap = 1024;
 const out_cap = 96 * 1024;
 const chunk = 16 * 1024;
 
+/// Response buffers live in a zero-initialised global rather than in the client records (see net.zig).
+var http_out: [max_clients][out_cap]u8 = undefined;
+
 const State = enum { free, reading, sending };
 
 const Client = struct {
@@ -24,7 +27,7 @@ const Client = struct {
     state: State = .free,
     req: [req_cap]u8 = undefined,
     req_len: usize = 0,
-    out: [out_cap]u8 = undefined,
+    out: []u8 = &.{},
     out_len: usize = 0,
     sent: usize = 0,
     file_fd: sys.Fd = -1,
@@ -74,7 +77,7 @@ pub const Server = struct {
                 sys.close(fd);
                 continue;
             };
-            self.clients[slot] = .{ .fd = fd, .state = .reading, .started_ms = now_ms };
+            self.clients[slot] = .{ .fd = fd, .state = .reading, .started_ms = now_ms, .out = &http_out[slot] };
             self.ep.add(fd, self.client_tag_base + slot, sys.IN | linux.EPOLL.RDHUP) catch {
                 sys.close(fd);
                 self.clients[slot].state = .free;
@@ -142,7 +145,7 @@ pub const Server = struct {
     }
 
     fn reply(c: *Client, status: []const u8, ctype: []const u8, body: []const u8) void {
-        const h = std.fmt.bufPrint(&c.out, "HTTP/1.0 {s}\r\nContent-Type: {s}\r\nContent-Length: {d}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n", .{ status, ctype, body.len }) catch unreachable;
+        const h = std.fmt.bufPrint(c.out, "HTTP/1.0 {s}\r\nContent-Type: {s}\r\nContent-Length: {d}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n", .{ status, ctype, body.len }) catch unreachable;
         const n = @min(body.len, out_cap - h.len);
         @memcpy(c.out[h.len..][0..n], body[0..n]);
         c.out_len = h.len + n;
@@ -195,7 +198,7 @@ pub const Server = struct {
             const fd = sys.open(p, .{}, 0) catch return notFound(c);
             const size = sys.fileSize(fd);
             _ = linux.lseek(fd, 0, linux.SEEK.SET);
-            const h = std.fmt.bufPrint(&c.out, "HTTP/1.0 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {d}\r\nContent-Disposition: attachment; filename=\"{s}\"\r\nConnection: close\r\n\r\n", .{ size, name }) catch unreachable;
+            const h = std.fmt.bufPrint(c.out, "HTTP/1.0 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {d}\r\nContent-Disposition: attachment; filename=\"{s}\"\r\nConnection: close\r\n\r\n", .{ size, name }) catch unreachable;
             c.out_len = h.len;
             c.sent = 0;
             c.file_fd = fd;

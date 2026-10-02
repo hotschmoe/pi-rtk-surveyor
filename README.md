@@ -9,7 +9,7 @@ centimetre-level coordinates, a CSV, and a drawn topographic sheet.
 It is a **hobby system**: aim for survey practice you could defend, but do not use
 the output for permits or boundary decisions.
 
-One static binary, `rtkd` (Zig 0.16, `aarch64-linux-musl`, no runtime, ~3.8 MB),
+One static binary, `rtkd` (Zig 0.16, `aarch64-linux-musl`, no runtime, 494 KB stripped),
 runs on both units; the role comes from `/etc/rtk/rtk.conf`.
 
 ## Status
@@ -79,6 +79,14 @@ tools/          gnss-sim (simulated LC29H), e2e_sim, sim_survey, topo (maps), ge
 examples/       a simulated-site job and its drawn sheet
 docs/           setup, workflow, field guide, hardware
 ```
+
+## Footprint
+
+Measured on the units (ReleaseSafe, stripped): **494 KB** binary, **520 kB RSS**, one thread,
+about **0.6% of one core** while relaying 6 RTCM frames per second. Other modes, same source:
+ReleaseFast 413 KB, ReleaseSmall 220 KB. The deploy build is ReleaseSafe on purpose: the daemon
+is I/O bound, so the safety checks (bounds, overflow) cost nothing measurable, and a bug becomes a
+panic and a 3-second systemd restart rather than silently wrong survey data.
 
 ## Development
 

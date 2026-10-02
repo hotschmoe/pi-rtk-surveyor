@@ -8,16 +8,25 @@ pub const preamble: u8 = 0xD3;
 pub const max_payload = 1023;
 pub const max_frame = 3 + max_payload + 3;
 
-pub fn crc24q(data: []const u8) u24 {
-    var crc: u32 = 0;
-    for (data) |b| {
-        crc ^= @as(u32, b) << 16;
+/// CRC-24Q lookup table, built at compile time.
+const crc_table = blk: {
+    @setEvalBranchQuota(10_000);
+    var t: [256]u24 = undefined;
+    for (&t, 0..) |*e, i| {
+        var c: u32 = @as(u32, @intCast(i)) << 16;
         for (0..8) |_| {
-            crc <<= 1;
-            if (crc & 0x1000000 != 0) crc ^= 0x1864CFB;
+            c <<= 1;
+            if (c & 0x1000000 != 0) c ^= 0x1864CFB;
         }
+        e.* = @truncate(c);
     }
-    return @truncate(crc);
+    break :blk t;
+};
+
+pub fn crc24q(data: []const u8) u24 {
+    var crc: u24 = 0;
+    for (data) |b| crc = (crc << 8) ^ crc_table[@as(u8, @truncate(crc >> 16)) ^ b];
+    return crc;
 }
 
 /// Total on-wire length implied by a 3-byte header, or null if the header is invalid.

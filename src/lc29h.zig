@@ -89,31 +89,28 @@ pub const Driver = struct {
         self.n_steps += 1;
     }
 
-    fn addNmeaRate(self: *Driver, label: []const u8, kind: u8, rate: u8) void {
-        var q: [24]u8 = undefined;
-        var h: [24]u8 = undefined;
-        var e: [8]u8 = undefined;
-        var w: [24]u8 = undefined;
-        self.add(
-            label,
-            std.fmt.bufPrint(&q, "PAIR063,{d}", .{kind}) catch unreachable,
-            std.fmt.bufPrint(&h, "PAIR063,{d},", .{kind}) catch unreachable,
-            std.fmt.bufPrint(&e, "{d}", .{rate}) catch unreachable,
-            std.fmt.bufPrint(&w, "PAIR062,{d},{d}", .{ kind, rate }) catch unreachable,
-        );
-    }
-
     fn buildSteps(self: *Driver) void {
         self.n_steps = 0;
         var b1: [64]u8 = undefined;
         var b2: [96]u8 = undefined;
         // NMEA: what the UI uses. GLL and VTG are redundant load on a 115200 link.
-        self.addNmeaRate("nmea gga", 0, 1);
-        self.addNmeaRate("nmea gll", 1, 0);
-        self.addNmeaRate("nmea gsa", 2, 1);
-        self.addNmeaRate("nmea gsv", 3, 1);
-        self.addNmeaRate("nmea rmc", 4, 1);
-        self.addNmeaRate("nmea vtg", 5, 0);
+        // The command strings are built at compile time.
+        inline for (.{
+            .{ "nmea gga", 0, 1 },
+            .{ "nmea gll", 1, 0 },
+            .{ "nmea gsa", 2, 1 },
+            .{ "nmea gsv", 3, 1 },
+            .{ "nmea rmc", 4, 1 },
+            .{ "nmea vtg", 5, 0 },
+        }) |r| {
+            self.add(
+                r[0],
+                std.fmt.comptimePrint("PAIR063,{d}", .{r[1]}),
+                std.fmt.comptimePrint("PAIR063,{d},", .{r[1]}),
+                std.fmt.comptimePrint("{d}", .{r[2]}),
+                std.fmt.comptimePrint("PAIR062,{d},{d}", .{ r[1], r[2] }),
+            );
+        }
 
         switch (self.setup.role) {
             .rover => {

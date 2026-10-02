@@ -42,6 +42,15 @@ One thread, one epoll loop (`app.zig`); no libc, no std.Io: raw syscalls through
 * `ui.zig` `fb.zig` `oled.zig` `input.zig` `gpio.zig`: pure screens over a `View`, SH1106 over SPI, GPIO uAPI v2 keys.
 * `http.zig` `page.html`: status page, downloads, POST-only actions.
 
+Zig idioms in use: comptime tables (CRC-24Q, config keys reflected over `Config`, NMEA/PQTM dispatch via
+`StaticStringMap`, command strings via `comptimePrint`), `inline for`, comptime size assertions on kernel ABI
+structs, duck-typed sinks (`anytype`) instead of vtables. **Never put large buffers in a struct that has a
+default initialiser** (`.{}` / `= .{}` array-of-structs): Zig emits the whole thing as a constant in the binary
+and copies it at start-up. Keep big buffers in separate `var x: [N]T = undefined;` globals and reference them
+by slice (see `caster_out` in net.zig, `http_out` in http.zig; this cut the binary from 1.07 MB to 494 KB).
+Build options: release builds are stripped, single-threaded, no error tracing, `simple_panic`, no segfault
+handler (a stripped binary cannot symbolise traces anyway).
+
 Rules that matter: only CRC-valid RTCM frames are forwarded to a receiver; the UI never swallows a key
 press; a point is fsynced before the screen says SAVED; accuracy is never reported better than the measured
 scatter; log lines go through `log.zig` (journald priority prefixes); tests keep logging quiet.

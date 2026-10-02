@@ -181,6 +181,21 @@ fn field(it: *std.mem.SplitIterator(u8, .scalar)) []const u8 {
     return it.next() orelse "";
 }
 
+const SentenceKind = enum { gga, rmc, gsa, gsv };
+const kinds = std.StaticStringMap(SentenceKind).initComptime(.{
+    .{ "GGA", .gga },
+    .{ "RMC", .rmc },
+    .{ "GSA", .gsa },
+    .{ "GSV", .gsv },
+});
+
+const PqtmKind = enum { epe, svin, verno };
+const pqtm_kinds = std.StaticStringMap(PqtmKind).initComptime(.{
+    .{ "PQTMEPE", .epe },
+    .{ "PQTMSVINSTATUS", .svin },
+    .{ "PQTMVERNO", .verno },
+});
+
 /// Parse a verified sentence body (no '$', no '*HH').
 pub fn parse(body: []const u8) Msg {
     var it = std.mem.splitScalar(u8, body, ',');
@@ -193,119 +208,126 @@ pub fn parse(body: []const u8) Msg {
         return .{ .ack = .{ .kind = .pair, .name = name, .ok = std.mem.eql(u8, res, "0") } };
     }
     if (head.len != 5) return .other;
-    const kind = head[2..5];
+    return switch (kinds.get(head[2..5]) orelse return .other) {
+        .gga => parseGga(&it),
+        .rmc => parseRmc(&it),
+        .gsa => parseGsa(&it),
+        .gsv => .{
+            .gsv = .{
+                .talker = .{ head[0], head[1] },
+                .in_view = blk: {
+                    _ = field(&it); // total sentences
+                    _ = field(&it); // this sentence
+                    break :blk int(u8, field(&it)) orelse 0;
+                },
+            },
+        },
+    };
+}
 
-    if (std.mem.eql(u8, kind, "GGA")) {
-        const t = field(&it);
-        const lat = field(&it);
-        const ns = field(&it);
-        const lon = field(&it);
-        const ew = field(&it);
-        const q = int(u8, field(&it)) orelse 0;
-        const sats = int(u8, field(&it)) orelse 0;
-        const hdop = num(f32, field(&it));
-        const alt = num(f64, field(&it));
-        _ = field(&it); // M
-        const sep = num(f64, field(&it));
-        _ = field(&it); // M
-        const age = num(f32, field(&it));
-        return .{ .gga = .{
-            .utc_s = utcSeconds(t),
-            .lat = angle(lat, ns, 2),
-            .lon = angle(lon, ew, 3),
-            .quality = @enumFromInt(q),
-            .sats = sats,
-            .hdop = hdop,
-            .alt_msl = alt,
-            .geoid_sep = sep,
-            .diff_age = age,
-        } };
+fn parseGga(it: *std.mem.SplitIterator(u8, .scalar)) Msg {
+    const t = field(it);
+    const lat = field(it);
+    const ns = field(it);
+    const lon = field(it);
+    const ew = field(it);
+    const q = int(u8, field(it)) orelse 0;
+    const sats = int(u8, field(it)) orelse 0;
+    const hdop = num(f32, field(it));
+    const alt = num(f64, field(it));
+    _ = field(it); // M
+    const sep = num(f64, field(it));
+    _ = field(it); // M
+    const age = num(f32, field(it));
+    return .{ .gga = .{
+        .utc_s = utcSeconds(t),
+        .lat = angle(lat, ns, 2),
+        .lon = angle(lon, ew, 3),
+        .quality = @enumFromInt(q),
+        .sats = sats,
+        .hdop = hdop,
+        .alt_msl = alt,
+        .geoid_sep = sep,
+        .diff_age = age,
+    } };
+}
+
+fn parseRmc(it: *std.mem.SplitIterator(u8, .scalar)) Msg {
+    const t = field(it);
+    const status = field(it);
+    for (0..4) |_| _ = field(it); // lat, N/S, lon, E/W
+    const spd = num(f32, field(it));
+    _ = field(it); // course
+    const date = field(it);
+    var y: u16 = 0;
+    var mo: u8 = 0;
+    var d: u8 = 0;
+    if (date.len == 6) {
+        d = int(u8, date[0..2]) orelse 0;
+        mo = int(u8, date[2..4]) orelse 0;
+        const yy = int(u16, date[4..6]) orelse 0;
+        y = if (yy >= 80) 1900 + yy else 2000 + yy;
     }
-    if (std.mem.eql(u8, kind, "RMC")) {
-        const t = field(&it);
-        const status = field(&it);
-        _ = field(&it);
-        _ = field(&it);
-        _ = field(&it);
-        _ = field(&it);
-        const spd = num(f32, field(&it));
-        _ = field(&it); // course
-        const date = field(&it);
-        var y: u16 = 0;
-        var mo: u8 = 0;
-        var d: u8 = 0;
-        if (date.len == 6) {
-            d = int(u8, date[0..2]) orelse 0;
-            mo = int(u8, date[2..4]) orelse 0;
-            const yy = int(u16, date[4..6]) orelse 0;
-            y = if (yy >= 80) 1900 + yy else 2000 + yy;
-        }
-        return .{ .rmc = .{
-            .utc_s = utcSeconds(t),
-            .valid = status.len == 1 and status[0] == 'A',
-            .speed_kn = spd,
-            .year = y,
-            .month = mo,
-            .day = d,
-        } };
-    }
-    if (std.mem.eql(u8, kind, "GSA")) {
-        _ = field(&it); // A/M
-        const mode = int(u8, field(&it)) orelse 1;
-        for (0..12) |_| _ = field(&it);
-        return .{ .gsa = .{
-            .mode = mode,
-            .pdop = num(f32, field(&it)),
-            .hdop = num(f32, field(&it)),
-            .vdop = num(f32, field(&it)),
-        } };
-    }
-    if (std.mem.eql(u8, kind, "GSV")) {
-        _ = field(&it); // total sentences
-        _ = field(&it); // this sentence
-        return .{ .gsv = .{
-            .talker = .{ head[0], head[1] },
-            .in_view = int(u8, field(&it)) orelse 0,
-        } };
-    }
-    return .other;
+    return .{ .rmc = .{
+        .utc_s = utcSeconds(t),
+        .valid = status.len == 1 and status[0] == 'A',
+        .speed_kn = spd,
+        .year = y,
+        .month = mo,
+        .day = d,
+    } };
+}
+
+fn parseGsa(it: *std.mem.SplitIterator(u8, .scalar)) Msg {
+    _ = field(it); // A/M
+    const mode = int(u8, field(it)) orelse 1;
+    for (0..12) |_| _ = field(it); // satellite IDs
+    return .{ .gsa = .{
+        .mode = mode,
+        .pdop = num(f32, field(it)),
+        .hdop = num(f32, field(it)),
+        .vdop = num(f32, field(it)),
+    } };
 }
 
 fn parsePqtm(head: []const u8, it: *std.mem.SplitIterator(u8, .scalar)) Msg {
-    if (std.mem.eql(u8, head, "PQTMEPE")) {
-        _ = field(it); // version
-        return .{ .epe = .{
-            .north = num(f32, field(it)),
-            .east = num(f32, field(it)),
-            .down = num(f32, field(it)),
-            .horiz = num(f32, field(it)),
-            .spatial = num(f32, field(it)),
-        } };
+    switch (pqtm_kinds.get(head) orelse return parseAck(head, it)) {
+        .epe => {
+            _ = field(it); // version
+            return .{ .epe = .{
+                .north = num(f32, field(it)),
+                .east = num(f32, field(it)),
+                .down = num(f32, field(it)),
+                .horiz = num(f32, field(it)),
+                .spatial = num(f32, field(it)),
+            } };
+        },
+        .svin => {
+            _ = field(it); // version
+            _ = field(it); // TOW
+            const valid = int(u8, field(it)) orelse 0;
+            _ = field(it);
+            _ = field(it);
+            const observed = int(u32, field(it)) orelse 0;
+            const cfg = int(u32, field(it)) orelse 0;
+            const x = num(f64, field(it));
+            const y = num(f64, field(it));
+            const z = num(f64, field(it));
+            const acc = num(f32, field(it));
+            return .{ .svin = .{
+                .state = valid,
+                .observed_s = observed,
+                .cfg_dur_s = cfg,
+                .ecef = if (x != null and y != null and z != null) .{ x.?, y.?, z.? } else null,
+                .acc_m = acc,
+            } };
+        },
+        .verno => return .{ .version = .{ .text = field(it) } },
     }
-    if (std.mem.eql(u8, head, "PQTMSVINSTATUS")) {
-        _ = field(it); // version
-        _ = field(it); // TOW
-        const valid = int(u8, field(it)) orelse 0;
-        _ = field(it);
-        _ = field(it);
-        const observed = int(u32, field(it)) orelse 0;
-        const cfg = int(u32, field(it)) orelse 0;
-        const x = num(f64, field(it));
-        const y = num(f64, field(it));
-        const z = num(f64, field(it));
-        const acc = num(f32, field(it));
-        return .{ .svin = .{
-            .state = valid,
-            .observed_s = observed,
-            .cfg_dur_s = cfg,
-            .ecef = if (x != null and y != null and z != null) .{ x.?, y.?, z.? } else null,
-            .acc_m = acc,
-        } };
-    }
-    if (std.mem.eql(u8, head, "PQTMVERNO")) {
-        return .{ .version = .{ .text = field(it) } };
-    }
-    // Replies look like $PQTMCFGSVIN,OK,... or $PQTMCFGSVIN,ERROR,n
+}
+
+/// Replies look like $PQTMCFGSVIN,OK,... or $PQTMCFGSVIN,ERROR,n
+fn parseAck(head: []const u8, it: *std.mem.SplitIterator(u8, .scalar)) Msg {
     const status = field(it);
     if (std.mem.eql(u8, status, "OK")) return .{ .ack = .{ .kind = .pqtm, .name = head, .ok = true } };
     if (std.mem.eql(u8, status, "ERROR")) return .{ .ack = .{ .kind = .pqtm, .name = head, .ok = false } };

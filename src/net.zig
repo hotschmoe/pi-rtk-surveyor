@@ -184,6 +184,11 @@ pub const BeaconRx = struct {
 pub const max_clients = 8;
 const out_cap = 16 * 1024;
 
+/// Per-client send queues live in zero-initialised globals, not inside the client records:
+/// a default-initialised struct containing them would be emitted as a constant in the binary
+/// and copied into place at start-up.
+var caster_out: [max_clients][out_cap]u8 = undefined;
+
 const ClientState = enum { free, request, stream };
 
 const CasterClient = struct {
@@ -192,7 +197,7 @@ const CasterClient = struct {
     ip: Ip4 = undefined,
     inbuf: [ntrip.max_request]u8 = undefined,
     inlen: usize = 0,
-    out: [out_cap]u8 = undefined,
+    out: []u8 = &.{},
     out_len: usize = 0,
     connected_ms: u64 = 0,
 };
@@ -253,7 +258,7 @@ pub const Caster = struct {
             };
             setOpt(fd, linux.IPPROTO.TCP, 1, 1);
             const c = &self.clients[slot];
-            c.* = .{ .fd = fd, .state = .request, .ip = @bitCast(sa.addr), .connected_ms = now_ms };
+            c.* = .{ .fd = fd, .state = .request, .ip = @bitCast(sa.addr), .connected_ms = now_ms, .out = &caster_out[slot] };
             self.ep.add(fd, self.client_tag_base + slot, sys.IN | linux.EPOLL.RDHUP) catch {
                 sys.close(fd);
                 c.state = .free;

@@ -108,84 +108,89 @@ fn parseBool(v: []const u8) ?bool {
     return null;
 }
 
-fn setStr(dst: anytype, v: []const u8) ?[]const u8 {
-    dst.set(v) catch return "value too long";
+/// Config keys: "section.key" -> field of `Config`. A key naming a missing field is a compile error.
+const keys = .{
+    .{ "unit.role", "role" },
+    .{ "unit.name", "name" },
+    .{ "gnss.device", "gnss_device" },
+    .{ "gnss.baud", "baud" },
+    .{ "caster.host", "caster_host" },
+    .{ "caster.port", "caster_port" },
+    .{ "caster.mount", "mount" },
+    .{ "caster.user", "user" },
+    .{ "caster.password", "password" },
+    .{ "caster.beacon_port", "beacon_port" },
+    .{ "base.mode", "base_mode" },
+    .{ "base.survey_secs", "survey_secs" },
+    .{ "base.survey_acc_m", "survey_acc_m" },
+    .{ "base.rtcm_msm", "rtcm_msm" },
+    .{ "survey.pole_height_m", "pole_height_m" },
+    .{ "survey.min_epochs", "min_epochs" },
+    .{ "survey.require_fixed", "require_fixed" },
+    .{ "survey.max_hacc_m", "max_hacc_m" },
+    .{ "survey.codes", "codes" },
+    .{ "log.dir", "log_dir" },
+    .{ "log.raw_rotate_mb", "raw_rotate_mb" },
+    .{ "log.raw_keep", "raw_keep" },
+    .{ "ui.http_port", "http_port" },
+    .{ "ui.rotate_180", "rotate_180" },
+    .{ "ui.contrast", "contrast" },
+    .{ "ui.sleep_secs", "sleep_secs" },
+};
+
+/// Parse `v` into `dst` according to the field's type. Returns an error message or null.
+fn setValue(comptime T: type, dst: *T, v: []const u8) ?[]const u8 {
+    switch (@typeInfo(T)) {
+        .optional => |o| {
+            var inner: o.child = undefined;
+            if (setValue(o.child, &inner, v)) |m| return m;
+            dst.* = inner;
+        },
+        .bool => dst.* = parseBool(v) orelse return "expected yes or no",
+        .int => dst.* = std.fmt.parseInt(T, v, 0) catch return "not a valid number",
+        .float => dst.* = std.fmt.parseFloat(T, v) catch return "not a valid number",
+        .@"enum" => dst.* = std.meta.stringToEnum(T, v) orelse return enumHint(T),
+        .@"struct" => dst.set(v) catch return "value too long", // Str(N)
+        else => @compileError("unsupported config field type " ++ @typeName(T)),
+    }
     return null;
 }
 
-fn setNum(comptime T: type, dst: *T, v: []const u8) ?[]const u8 {
-    dst.* = (if (@typeInfo(T) == .float) std.fmt.parseFloat(T, v) else std.fmt.parseInt(T, v, 0)) catch return "not a valid number";
-    return null;
+/// "must be a, b or c" built at compile time from the enum's names.
+fn enumHint(comptime T: type) []const u8 {
+    const hint = comptime blk: {
+        const names = std.meta.fieldNames(T);
+        var s: []const u8 = "must be ";
+        for (names, 0..) |n, i| {
+            s = s ++ n ++ (if (i + 2 < names.len) ", " else if (i + 2 == names.len) " or " else "");
+        }
+        break :blk s;
+    };
+    return hint;
 }
 
 /// Returns an error message, or null on success.
 fn apply(c: *Config, key: []const u8, v: []const u8) ?[]const u8 {
-    const eq = std.mem.eql;
-    if (eq(u8, key, "unit.role")) {
-        c.role = std.meta.stringToEnum(Role, v) orelse return "role must be base or rover";
-    } else if (eq(u8, key, "unit.name")) {
-        return setStr(&c.name, v);
-    } else if (eq(u8, key, "gnss.device")) {
-        return setStr(&c.gnss_device, v);
-    } else if (eq(u8, key, "gnss.baud")) {
-        return setNum(u32, &c.baud, v);
-    } else if (eq(u8, key, "caster.host")) {
-        return setStr(&c.caster_host, v);
-    } else if (eq(u8, key, "caster.port")) {
-        return setNum(u16, &c.caster_port, v);
-    } else if (eq(u8, key, "caster.mount")) {
-        return setStr(&c.mount, v);
-    } else if (eq(u8, key, "caster.user")) {
-        return setStr(&c.user, v);
-    } else if (eq(u8, key, "caster.password")) {
-        return setStr(&c.password, v);
-    } else if (eq(u8, key, "caster.beacon_port")) {
-        return setNum(u16, &c.beacon_port, v);
-    } else if (eq(u8, key, "base.mode")) {
-        c.base_mode = std.meta.stringToEnum(BaseMode, v) orelse return "mode must be auto, survey_in or fixed";
-    } else if (eq(u8, key, "base.survey_secs")) {
-        return setNum(u32, &c.survey_secs, v);
-    } else if (eq(u8, key, "base.survey_acc_m")) {
-        return setNum(f32, &c.survey_acc_m, v);
-    } else if (eq(u8, key, "base.fixed")) {
+    inline for (keys) |k| {
+        if (std.mem.eql(u8, key, k[0])) {
+            if (setValue(@FieldType(Config, k[1]), &@field(c, k[1]), v)) |m| return m;
+            if (comptime std.mem.eql(u8, k[0], "base.rtcm_msm")) {
+                if (c.rtcm_msm != 4 and c.rtcm_msm != 7) return "rtcm_msm must be 4 or 7";
+            }
+            return null;
+        }
+    }
+    if (std.mem.eql(u8, key, "base.fixed")) {
         // fixed = lat, lon, ellipsoidal height
         var it = std.mem.splitScalar(u8, v, ',');
-        const a = std.mem.trim(u8, it.next() orelse "", " ");
-        const b = std.mem.trim(u8, it.next() orelse "", " ");
-        const h = std.mem.trim(u8, it.next() orelse "", " ");
-        if (setNum(f64, &c.fixed_lat, a)) |m| return m;
-        if (setNum(f64, &c.fixed_lon, b)) |m| return m;
-        if (setNum(f64, &c.fixed_h, h)) |m| return m;
+        inline for (.{ "fixed_lat", "fixed_lon", "fixed_h" }) |f| {
+            const part = std.mem.trim(u8, it.next() orelse "", " ");
+            if (setValue(f64, &@field(c, f), part)) |m| return m;
+        }
         c.have_fixed = true;
-    } else if (eq(u8, key, "base.rtcm_msm")) {
-        if (setNum(u8, &c.rtcm_msm, v)) |m| return m;
-        if (c.rtcm_msm != 4 and c.rtcm_msm != 7) return "rtcm_msm must be 4 or 7";
-    } else if (eq(u8, key, "survey.pole_height_m")) {
-        return setNum(f64, &c.pole_height_m, v);
-    } else if (eq(u8, key, "survey.min_epochs")) {
-        return setNum(u32, &c.min_epochs, v);
-    } else if (eq(u8, key, "survey.require_fixed")) {
-        c.require_fixed = parseBool(v) orelse return "expected yes or no";
-    } else if (eq(u8, key, "survey.max_hacc_m")) {
-        return setNum(f32, &c.max_hacc_m, v);
-    } else if (eq(u8, key, "survey.codes")) {
-        return setStr(&c.codes, v);
-    } else if (eq(u8, key, "log.dir")) {
-        return setStr(&c.log_dir, v);
-    } else if (eq(u8, key, "log.raw_rotate_mb")) {
-        return setNum(u32, &c.raw_rotate_mb, v);
-    } else if (eq(u8, key, "log.raw_keep")) {
-        return setNum(u32, &c.raw_keep, v);
-    } else if (eq(u8, key, "ui.http_port")) {
-        return setNum(u16, &c.http_port, v);
-    } else if (eq(u8, key, "ui.rotate_180")) {
-        c.rotate_180 = parseBool(v) orelse return "expected yes or no";
-    } else if (eq(u8, key, "ui.contrast")) {
-        return setNum(u8, &c.contrast, v);
-    } else if (eq(u8, key, "ui.sleep_secs")) {
-        return setNum(u32, &c.sleep_secs, v);
-    } else return "unknown key";
-    return null;
+        return null;
+    }
+    return "unknown key";
 }
 
 pub fn parse(text: []const u8, out: *Config) ?Problem {

@@ -35,6 +35,14 @@ comptime {
 
 pub const version = "0.1.0";
 
+/// A panic prints its message and stops; systemd restarts the daemon within seconds. The default
+/// handler's stack-trace machinery is useless on a stripped binary and costs hundreds of KB.
+pub const panic = std.debug.simple_panic;
+
+/// No segfault handler: it needs a 256 KB signal stack and DWARF machinery to print traces that a
+/// stripped binary cannot symbolise.
+pub const std_options: std.Options = .{ .enable_segfault_handler = false };
+
 const usage =
     \\rtkd - Pi RTK Surveyor daemon
     \\
