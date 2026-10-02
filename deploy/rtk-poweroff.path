@@ -1,0 +1,8 @@
+[Unit]
+Description=Power off when requested from the rtkd keypad
+
+[Path]
+PathExists=/var/lib/rtk/poweroff
+
+[Install]
+WantedBy=multi-user.target

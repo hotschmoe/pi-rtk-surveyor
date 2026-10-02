@@ -194,6 +194,8 @@ pub const App = struct {
     last_stats_ms: u64 = 0,
     last_drv_state: lc29h.State = .probing,
     http: ?http.Server = null,
+    combo_since_ms: u64 = 0,
+    powering_off: bool = false,
 
     // ---- construction -----------------------------------------------------------------------------------------
 
@@ -346,7 +348,7 @@ pub const App = struct {
 
     pub fn deinit(self: *App) void {
         // Leave the panel saying so, rather than frozen on stale numbers.
-        self.setToast(" RTKD STOPPED", "Service stopped.", "Restart to resume.", "", 0);
+        if (self.powering_off) self.setToast(" POWERING OFF", "Wait 15 seconds,", "then unplug power.", "", 0) else self.setToast(" RTKD STOPPED", "Service stopped.", "Restart to resume.", "", 0);
         self.renderUi(sys.monotonicMs(), true);
         if (self.raw) |*r| r.close();
         if (self.job) |*j| j.close();
@@ -524,7 +526,10 @@ pub const App = struct {
         if (self.raw) |*r| r.tick(now);
         if (self.http) |*h| h.tick(now);
 
-        if (self.keys) |*k| if (k.pending()) self.pollKeys(now);
+        if (self.keys) |*k| {
+            if (k.pending()) self.pollKeys(now);
+            self.checkPowerCombo(now);
+        }
 
         if (now >= self.last_info_ms + 3000) {
             self.last_info_ms = now;
@@ -816,6 +821,35 @@ pub const App = struct {
         const y = self.info;
         put(buf, &n, "\"sys\":{{\"temp_c\":{?d:.1},\"load\":{?d:.2},\"mem_pct\":{?d},\"uptime_s\":{?d},\"rssi\":{?d},\"throttled\":{?d}}}}}", .{ y.temp_c, y.load1, y.mem_used_pct, y.uptime_s, y.rssi_dbm, y.throttled });
         return buf[0..n];
+    }
+
+    /// K1 + K3 held together for 3 s: clean power-off (no pulling the plug on a card).
+    fn checkPowerCombo(self: *App, now: u64) void {
+        const k = &(self.keys orelse return);
+        const held = k.deb.down[@intFromEnum(input.Button.key1)] and k.deb.down[@intFromEnum(input.Button.key3)];
+        if (!held) {
+            if (self.combo_since_ms != 0) {
+                self.combo_since_ms = 0;
+                self.toast = null;
+            }
+            return;
+        }
+        if (self.combo_since_ms == 0) self.combo_since_ms = now;
+        const held_ms = now - self.combo_since_ms;
+        if (held_ms >= 3000) {
+            log.info("keypad: K1+K3 held, powering off", .{});
+            var pb: [128]u8 = undefined;
+            const path = std.fmt.bufPrint(&pb, "{s}/poweroff", .{self.cfg.log_dir.get()}) catch return;
+            sys.writeFileAtomic(path, "1\n") catch |e| {
+                log.err("cannot request power-off: {s}", .{@errorName(e)});
+                return self.setToast(" POWER OFF FAILED", @errorName(e), "Is rtk-poweroff.path", "installed?", now + 5000);
+            };
+            self.powering_off = true;
+            self.running = false;
+        } else if (held_ms >= 700) {
+            var tb: [32]u8 = undefined;
+            self.setToast(" POWER OFF", std.fmt.bufPrint(&tb, "in {d} s...", .{(3000 - held_ms) / 1000 + 1}) catch "", "Release to cancel.", "", 0);
+        }
     }
 
     // ---- display ------------------------------------------------------------------------------------------------------------------

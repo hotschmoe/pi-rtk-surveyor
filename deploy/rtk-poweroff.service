@@ -1,0 +1,7 @@
+[Unit]
+Description=Power off requested from the rtkd keypad (hold K1+K3)
+
+[Service]
+Type=oneshot
+ExecStartPre=/bin/rm -f /var/lib/rtk/poweroff
+ExecStart=/usr/bin/systemctl poweroff
