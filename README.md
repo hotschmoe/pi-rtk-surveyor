@@ -46,7 +46,8 @@ Open `http://rtk1.local:8080/` on a phone. Everything else is in:
 
 * [docs/setup.md](docs/setup.md): card preparation, install, config reference, dev loop
 * [docs/workflow.md](docs/workflow.md): screens, keys, marking a point, data formats
-* [docs/field-guide.md](docs/field-guide.md): setting up the base, QC practice, limitations
+* [docs/field-guide.md](docs/field-guide.md): day-of checklist (order of operations), QC practice, limitations
+* [docs/bom.md](docs/bom.md): hardware-store bill of materials, build steps, Wi-Fi options for the field
 * [docs/hardware.md](docs/hardware.md): variants, UART, schematic findings, command set
 
 ## How it works
@@ -72,7 +73,7 @@ placeholder North Pole position until it has surveyed in.
 ```
 src/            rtkd (Zig): nmea rtcm demux geo lc29h ntrip net survey ui fb oled input gpio
                 uart sys config rawlog basepos sysinfo http app, plus fixtures/ from real captures
-scripts/        build deploy logs gnss-tap provision e2e-sim (+ gnss-cmd/probe for the Pi)
+scripts/        build deploy logs gnss-tap provision add-wifi e2e-sim (+ gnss-cmd/probe for the Pi)
 deploy/         systemd units, per-unit configs
 tools/          gnss-sim (simulated LC29H), e2e_sim, sim_survey, topo (maps), genfont
 examples/       a simulated-site job and its drawn sheet

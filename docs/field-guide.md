@@ -1,5 +1,61 @@
 # Field guide
 
+## Day-of checklist: order of operations
+
+**The night before** (at the office, on the same network the units already know)
+
+1. Charge both power banks and the phone. Pack the kit (see docs/bom.md section F).
+2. Teach both units the field network once: `scripts/add-wifi.sh all "YourHotspotOrRouterName"`
+   (the password is typed at a prompt and goes only into the units' own NetworkManager
+   profiles). Skip if you will use the office network.
+3. Look at both screens: rover shows `NO FIX` indoors and `LINK OK RTK2`, base shows `NO SKY`.
+   That means both are healthy, and indoors it is as good as it gets.
+4. Check `survey.pole_height_m` on the rover matches the pole you will carry.
+
+**At the site**
+
+1. **Network first.** Turn on the phone hotspot (2.4 GHz) or the travel router, and put it near
+   the middle of the site.
+2. **Base: choose the spot.** Open sky, stable ground, near the centre of the site, away from
+   walls, trees, parked vehicles and metal. Drive a nail or stake as the base mark, set the
+   tripod over it (plumb bob), spread and tread the legs in, hang the sandbag.
+3. **Base: antenna and power.** Screw the antenna on, connect the cable to the HAT, plug in the
+   power bank. Write down in your notebook: base mark, antenna height above the mark, time, weather.
+4. **Base: wait for BASE READY.** The screen goes through the bring-up list, then `NO SKY` until it
+   sees satellites, then `SURVEYING` with a progress bar (default 15 minutes, `base.survey_secs`;
+   it also needs the accuracy limit met), then `BASE READY` in inverted type. Do not touch the tripod.
+   Use the time to set up the rover and walk the site. The base stores this position; every later
+   power-up on the same monument reuses it.
+5. **Rover: power on** (any time, before or after the base is ready). Wait for `LINK OK RTK2` on
+   STATUS. If it says `searching for base` for more than a minute: check both units are on the
+   same Wi-Fi (SYSTEM page shows each unit's IP and signal), then see "Known limitations" below.
+6. **Rover: wait for RTK FIX** (the fix label turns solid/inverted; estimated error shows in cm).
+   `RTK FLT` (float) is normal for a minute or two. Marking is refused until it is a fix.
+7. **Survey.** Walk to the first point. Plumb the pole on the bubble. Pick the feature code
+   (joystick up/down on the POINTS page). Press **K3** (or the joystick). Hold still until
+   `SAVED 001`. Repeat. (From the phone: the web page has the same MARK button.)
+8. **Check shots.** Re-occupy 2-3 earlier points near the end and compare. Over about 3 cm means
+   something went wrong; see below.
+9. **Finish.** On the rover and then the base, hold **K1 + K3 for 3 seconds**: the screen says
+   `POWERING OFF`; wait 15 seconds, then unplug. (Do not just pull the plug: the SD card can corrupt.)
+10. **Get the data.** Before shutting down, or later with the units on any network, open
+    `http://<rover-ip>:8080/` on the phone and download the job CSV (and GeoJSON). The base's raw
+    log (for post-processing) is on the base's web page. Then at home:
+    `tools/topo.py JOB1.csv --title "Back field" --out back-field`.
+
+**If something goes wrong**
+
+| You see | Meaning | Do |
+|---|---|---|
+| `E01 RECEIVER` | wrong HAT for the role | fit the BS HAT on the base, the DA HAT on the rover |
+| rover `NO FIX` outdoors | antenna cable, antenna view, or the receiver has no almanac yet | check the U.FL plug; give it 5 minutes; check sky view |
+| rover stuck on `RTK FLT` | corrections arrive but ambiguities are not fixed | wait; move away from trees/walls; check baseline and that the base is READY |
+| `LINK backoff: ...` | the link is retrying; the text says why | `mountpoint not found`: name mismatch; `connect timeout`: base off or on another network |
+| `POWER LOW NOW` | the supply is sagging | fresh bank, shorter/thicker cable |
+| `CANNOT MARK  NO RTK FIX` | refusing a float/single point | wait for RTK FIX (or set `survey.require_fixed = no` if you accept float) |
+| base `K3 AGAIN: DISCARD+RESURVEY` | you pressed K3 | press K3 again within 4 s only if you moved the base to a new monument |
+
+
 The goal is survey practice you could defend, with hobby-grade equipment. This
 is a **hobby system: do not use its output for permits or boundary decisions**.
 The practice below is what makes the numbers as trustworthy as the hardware
