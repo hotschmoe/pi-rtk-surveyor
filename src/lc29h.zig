@@ -33,6 +33,9 @@ pub const Setup = struct {
     role: config.Role,
     base: BaseSetup = .{ .survey = .{ .secs = 900, .acc_m = 3.0 } },
     msm: u8 = 7,
+    /// Write the survey-in configuration even if it already matches, which
+    /// restarts the survey (used when the operator asks to resurvey).
+    force_survey: bool = false,
 };
 
 const reply_timeout_ms = 1200;
@@ -122,7 +125,10 @@ pub const Driver = struct {
                     .survey => |s| {
                         const expect = std.fmt.bufPrint(&b1, "OK,1,{d},{d:.1},0.0000,0.0000,0.0000", .{ s.secs, s.acc_m }) catch unreachable;
                         const write = std.fmt.bufPrint(&b2, "PQTMCFGSVIN,W,1,{d},{d:.1},0,0,0", .{ s.secs, s.acc_m }) catch unreachable;
-                        self.add("survey-in", "PQTMCFGSVIN,R", "PQTMCFGSVIN,", expect, write);
+                        if (self.setup.force_survey)
+                            self.add("survey-in", "", "", "", write)
+                        else
+                            self.add("survey-in", "PQTMCFGSVIN,R", "PQTMCFGSVIN,", expect, write);
                     },
                     .fixed => |x| {
                         const expect = std.fmt.bufPrint(&b1, "OK,2,0,0.0,{d:.4},{d:.4},{d:.4}", .{ x[0], x[1], x[2] }) catch unreachable;
@@ -456,6 +462,16 @@ test "base: configures a fresh BS, then a restart sends no writes" {
     try std.testing.expectEqual(@as(u32, 0), d2.writes_sent);
     try std.testing.expectEqual(@as(usize, 0), sim.sentCount("PQTMCFGSVIN,W"));
     try std.testing.expect(writes_before >= 2);
+}
+
+test "base: forced survey restart writes even when the config already matches" {
+    var sim: Sim = .{ .version = "LC29HBSNR11A01S" };
+    sim.setSvin("OK,1,900,3.0,0.0000,0.0000,0.0000");
+    var d = Driver.init(.{ .role = .base, .base = .{ .survey = .{ .secs = 900, .acc_m = 3.0 } }, .force_survey = true });
+    _ = run(&d, &sim, 30_000);
+    try std.testing.expectEqual(State.running, d.state);
+    try std.testing.expectEqual(@as(usize, 1), sim.sentCount("PQTMCFGSVIN,W,1,900,3.0,0,0,0"));
+    try std.testing.expectEqual(@as(usize, 0), sim.sentCount("PQTMCFGSVIN,R"));
 }
 
 test "base: fixed position is converted and written once" {

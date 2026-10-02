@@ -1,0 +1,2 @@
+# Lets the unit power itself off cleanly from the keypad (hold K1+K3). Nothing else.
+rtk ALL=(root) NOPASSWD: /usr/bin/systemctl poweroff

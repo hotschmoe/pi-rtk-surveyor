@@ -448,6 +448,15 @@ pub const Link = struct {
         self.enter(.backoff, now_ms);
     }
 
+    /// Send one NMEA sentence upstream (the rover's GGA, for VRS casters and for
+    /// the base to see who is connected). Silently ignored unless streaming.
+    pub fn sendLine(self: *Link, body: []const u8) void {
+        if (self.state != .streaming or self.fd < 0) return;
+        var buf: [160]u8 = undefined;
+        const f = @import("nmea.zig").frame(&buf, body) catch return;
+        _ = send(self.fd, f) catch {};
+    }
+
     /// Housekeeping, at least every 100 ms.
     pub fn tick(self: *Link, now_ms: u64, beacon: ?BeaconInfo) void {
         switch (self.state) {

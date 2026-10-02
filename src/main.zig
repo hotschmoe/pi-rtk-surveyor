@@ -4,6 +4,7 @@ const log = @import("log.zig");
 const config = @import("config.zig");
 const selftest = @import("selftest.zig");
 const screens = @import("screens.zig");
+const app_mod = @import("app.zig");
 
 comptime {
     _ = @import("nmea.zig");
@@ -27,6 +28,8 @@ comptime {
     _ = @import("rawlog.zig");
     _ = @import("sysinfo.zig");
     _ = @import("ui.zig");
+    _ = @import("app.zig");
+    _ = @import("screens.zig");
 }
 
 pub const version = "0.1.0";
@@ -56,6 +59,22 @@ fn loadConfig(path: []const u8, cfg: *config.Config) bool {
         return false;
     }
     return true;
+}
+
+var app_storage: app_mod.App = undefined;
+
+fn runDaemon(cfg: *const config.Config) u8 {
+    app_storage = app_mod.App.init(cfg) catch |e| {
+        log.err("init failed: {s}", .{@errorName(e)});
+        return 1;
+    };
+    app_storage.setup() catch |e| {
+        log.err("setup failed: {s} (errno {d})", .{ @errorName(e), sys.last_errno });
+        return 1;
+    };
+    app_storage.run();
+    app_storage.deinit();
+    return 0;
 }
 
 pub fn main(init: std.process.Init.Minimal) u8 {
@@ -91,6 +110,5 @@ pub fn main(init: std.process.Init.Minimal) u8 {
         return 0;
     }
     if (std.mem.eql(u8, command, "selftest")) return selftest.run(&cfg);
-    log.err("daemon not implemented yet", .{});
-    return 1;
+    return runDaemon(&cfg);
 }

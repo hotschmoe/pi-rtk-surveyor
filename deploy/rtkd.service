@@ -1,0 +1,33 @@
+[Unit]
+Description=Pi RTK Surveyor daemon
+Documentation=https://github.com/hotschmoe/pi-rtk-surveyor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rtk
+Group=rtk
+SupplementaryGroups=dialout spi gpio
+ExecStart=/usr/local/bin/rtkd --config /etc/rtk/rtk.conf
+Restart=always
+RestartSec=3
+StateDirectory=rtk
+StateDirectoryMode=0755
+SyslogLevelPrefix=yes
+
+# Confinement: the daemon needs the serial port, SPI, GPIO and its own state directory.
+ProtectSystem=strict
+ReadWritePaths=/var/lib/rtk
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryMax=96M
+LimitNOFILE=256
+
+[Install]
+WantedBy=multi-user.target

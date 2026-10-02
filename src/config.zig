@@ -79,6 +79,8 @@ pub const Config = struct {
     http_port: u16 = 8080,
     rotate_180: bool = true,
     contrast: u8 = 0x7F,
+    /// Blank the OLED after this many idle seconds (0 = never). Any key wakes it.
+    sleep_secs: u32 = 120,
 };
 
 pub const Problem = struct {
@@ -180,6 +182,8 @@ fn apply(c: *Config, key: []const u8, v: []const u8) ?[]const u8 {
         c.rotate_180 = parseBool(v) orelse return "expected yes or no";
     } else if (eq(u8, key, "ui.contrast")) {
         return setNum(u8, &c.contrast, v);
+    } else if (eq(u8, key, "ui.sleep_secs")) {
+        return setNum(u32, &c.sleep_secs, v);
     } else return "unknown key";
     return null;
 }
