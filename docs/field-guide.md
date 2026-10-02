@@ -118,7 +118,11 @@ centimetre-class regardless, because the base error is common to all of them.
 the live job in your browser from the unit's own data, with no internet needed: a plan view with
 hypsometric tint, TIN contours (every 5th labelled), point numbers, elevations and codes, hover for a
 point's accuracy, fix type and time, a north arrow and scale bar; and a **3D** button for a shaded mesh you
-can drag to rotate (vertical exaggeration slider). "Save PNG" saves the current view.
+can drag to rotate (vertical exaggeration slider). "Save PNG" saves the current view. The surface is
+computed in your browser by a 24 KB WebAssembly module the unit serves (`/map.wasm`): 6,000 points take
+about a tenth of a second on a laptop, up to 20,000 points are supported, and the unit itself does no extra
+work. The corner of the page says which engine ran (`wasm`, or `js` for the slower fallback used if the
+browser cannot run WebAssembly; `?nowasm` on the URL forces it). More in [map-compute.md](map-compute.md).
 
 **At home, from a job CSV (the tool needs only Python with numpy and matplotlib):**
 
@@ -129,7 +133,7 @@ tools/topo.py JOB1.csv --title "Back field" --out back-field
 | File | Use |
 |---|---|
 | `back-field.png` / `.pdf` / `.svg` | drafted A3 sheet: UTM grid, contours, north arrow, scale bar, title block with the survey's own accuracy statistics. The PDF is for printing or sharing. |
-| `back-field.html` | the same interactive plan + 3D viewer as a single file with the data inside: email it or open it offline. |
+| `back-field.html` | the same interactive plan + 3D viewer as a single file with the data and the WebAssembly module inside (about 70 KB plus the data): email it or open it offline. |
 | `back-field_xyz_local.txt` | **for ArchiCAD**: three columns X Y Z in metres, small local coordinates (see below) |
 | `back-field_xyz_utm.txt` | the same in UTM metres |
 | `back-field_local.dxf` / `.dxf` | layered CAD drawing with 3D contour polylines, points, numbers, elevations, codes and the TIN as 3D faces (layer `TIN_3D`); local-origin and UTM versions |

@@ -31,6 +31,7 @@ concrete buildings, antennas a few metres apart) and the whole chain worked.
 | Keypad power-off (K1+K3) | logic and unit files verified; **not triggered** on hardware |
 | Topo sheet and exports (PNG/PDF/SVG, DXF, ArchiCAD XYZ, OBJ, PNEZD, interactive HTML) | unit tests, plus a full simulated site (`examples/`); the in-browser viewer is tested with Node (geometry) and headless Chromium (rendering). **ArchiCAD import itself not tested** (no ArchiCAD here) |
 | Live map at `/map` on the unit | served by `rtkd` and tested; **not yet deployed to the units** |
+| Map compute (TIN, contours, 3D) in WebAssembly | Zig core in `src/geom`: native unit tests, Node cross-check against the JS reference (same triangles, same contour length), headless-Chromium renders; 6,000 points in 12 ms on a desktop. **Not tried on a phone**; JS fallback is automatic. See [docs/map-compute.md](docs/map-compute.md) (also why not WebGPU) |
 
 Run the whole simulated system with `scripts/e2e-sim.sh` (38 checks: survey-in,
 discovery, RTK via the real corrections path, three marked points to a few mm,
@@ -75,17 +76,18 @@ placeholder North Pole position until it has surveyed in.
 ```
 src/            rtkd (Zig): nmea rtcm demux geo lc29h ntrip net survey ui fb oled input gpio
                 uart sys config rawlog basepos sysinfo http app, plus fixtures/ from real captures
-                and viewer.html (the plan + 3D map, served at /map and exported by topo.py)
-scripts/        build deploy logs gnss-tap provision add-wifi e2e-sim (+ gnss-cmd/probe for the Pi)
+                viewer.html (the plan + 3D map, served at /map and exported by topo.py), and map.wasm
+                (its geometry core, built from geom/*.zig: `scripts/build-wasm.sh`)
+scripts/        build build-wasm deploy logs gnss-tap provision add-wifi e2e-sim (+ gnss-cmd/probe for the Pi)
 deploy/         systemd units, per-unit configs
 tools/          gnss-sim (simulated LC29H), e2e_sim, sim_survey, topo (maps), genfont
 examples/       a simulated-site job and its drawn sheet
-docs/           setup, workflow, field guide, hardware
+docs/           setup, workflow, field guide, hardware, map-compute (wasm vs WebGPU, benchmarks)
 ```
 
 ## Footprint
 
-Measured on the units (ReleaseSafe, stripped): **494 KB** binary, **~550 kB RSS**, one thread.
+Measured on the units (ReleaseSafe, stripped): **494 KB** binary (557 KB since it also serves the map viewer, its 24 KB WebAssembly core and the larger page; Pi load is unchanged, they are static bytes), **~550 kB RSS**, one thread.
 With real satellites in view CPU is about **1.1% (rover) to 1.4% (base) of one core**; the base sends
 ~835 B/s of corrections (6 frames/s) and its receiver UART runs at about a fifth of capacity. SoC
 temperature was 49-52 C outdoors in the afternoon with no throttling and no under-voltage. Other modes, same source:
@@ -96,9 +98,11 @@ panic and a 3-second systemd restart rather than silently wrong survey data.
 ## Development
 
 ```sh
-zig build test                 # 85 unit tests, host-native, uses real receiver captures
+zig build test                 # 87 daemon + 17 map-geometry unit tests, host-native, uses real receiver captures
 python3 -m unittest tools/test_topo.py
-node tools/test_viewer.js      # geometry of the in-browser map: Delaunay TIN, contours
+node tools/test_viewer.js      # JS reference geometry of the in-browser map: Delaunay TIN, contours
+node tools/test_wasm.js        # the wasm core vs that reference, stamp check, speed table
+scripts/build-wasm.sh          # rebuild src/map.wasm after editing src/geom (commit the result)
 scripts/e2e-sim.sh             # full base+rover system on this machine, no hardware
 tools/sim_survey.py            # survey a synthetic site through the real stack, then draw it
 ```
