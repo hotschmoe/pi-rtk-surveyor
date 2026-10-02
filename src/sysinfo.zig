@@ -34,9 +34,7 @@ pub const Info = struct {
             self.rssi_dbm = parseWireless(t, iface);
         } else |_| {}
         self.ip = ifaceAddr(iface);
-        if (sys.readFile("/sys/devices/platform/soc/soc:firmware/get_throttled", &buf)) |t| {
-            self.throttled = std.fmt.parseInt(u32, std.mem.trim(u8, t, " \n"), 0) catch null;
-        } else |_| {}
+        self.throttled = underVoltage();
     }
 };
 
@@ -87,6 +85,22 @@ pub fn parseWireless(text: []const u8, iface: []const u8) ?i16 {
         _ = it.next(); // link quality
         const lvl = std.mem.trimEnd(u8, it.next() orelse return null, ".");
         return std.fmt.parseInt(i16, lvl, 10) catch null;
+    }
+    return null;
+}
+
+/// Raspberry Pi OS exposes the firmware's under-voltage flag as an hwmon
+/// device named "rpi_volt". Returns bit 0 set while under-voltage is flagged.
+fn underVoltage() ?u32 {
+    var buf: [64]u8 = undefined;
+    for (0..6) |i| {
+        var p: [64]u8 = undefined;
+        const name_path = std.fmt.bufPrint(&p, "/sys/class/hwmon/hwmon{d}/name", .{i}) catch continue;
+        const name = sys.readFile(name_path, &buf) catch continue;
+        if (!std.mem.eql(u8, std.mem.trim(u8, name, " \n"), "rpi_volt")) continue;
+        const alarm_path = std.fmt.bufPrint(&p, "/sys/class/hwmon/hwmon{d}/in0_lcrit_alarm", .{i}) catch continue;
+        const v = sys.readFile(alarm_path, &buf) catch continue;
+        return if (std.mem.trim(u8, v, " \n")[0] == '1') 1 else 0;
     }
     return null;
 }

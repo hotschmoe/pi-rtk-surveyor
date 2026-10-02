@@ -57,7 +57,8 @@ pub const Rx = struct {
             .gga => |g| {
                 self.quality = g.quality;
                 self.sats_used = g.sats;
-                self.hdop = g.hdop;
+                // The receiver reports 99.99 when it has no solution.
+                self.hdop = if (g.hdop) |h| (if (h < 50) h else null) else null;
                 self.lat = g.lat;
                 self.lon = g.lon;
                 self.alt_msl = g.alt_msl;

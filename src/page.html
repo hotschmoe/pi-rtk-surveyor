@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pi RTK Surveyor</title>
+<style>
+:root{--bg:#f4f5f7;--card:#fff;--ink:#14181f;--dim:#5b6573;--line:#d9dde3;--good:#0a7d3b;--warn:#b25e00;--bad:#b3261e;--accent:#1f5fbf}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1318;--card:#171c23;--ink:#e8ebf0;--dim:#97a1af;--line:#2a323d;--good:#47c97b;--warn:#f0a040;--bad:#ff7a70;--accent:#7fb0ff}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:640px;margin:0 auto;padding:16px}
+h1{font-size:15px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);margin:0 0 12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:12px}
+.fix{font-size:34px;font-weight:700;letter-spacing:.02em;margin:0}
+.fix.good{color:var(--good)}.fix.warn{color:var(--warn)}.fix.bad{color:var(--bad)}
+.sub{color:var(--dim);font-size:14px}
+dl{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;margin:8px 0 0}
+dt{color:var(--dim)}dd{margin:0;font-variant-numeric:tabular-nums;text-align:right}
+a{color:var(--accent)}
+ul{margin:6px 0 0;padding-left:20px}
+.hide{display:none}
+</style>
+</head>
+<body>
+<main>
+<h1 id="title">Pi RTK Surveyor</h1>
+
+<div class="card">
+  <p class="fix bad" id="fix">--</p>
+  <div class="sub" id="fixsub">connecting&hellip;</div>
+  <dl id="gnss"></dl>
+</div>
+
+<div class="card" id="rover">
+  <dl id="roverdl"></dl>
+  <p><a href="/points.csv">Download current job (CSV)</a> &middot; <a href="/points.geojson">GeoJSON</a></p>
+</div>
+
+<div class="card hide" id="base">
+  <dl id="basedl"></dl>
+</div>
+
+<div class="card">
+  <strong>Files</strong>
+  <div class="sub">Jobs and raw receiver logs stored on this unit.</div>
+  <ul id="files"></ul>
+</div>
+
+<div class="card"><dl id="sysdl"></dl></div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const f = (v, d = 3, u = '') => (v === null || v === undefined) ? '--' : (+v).toFixed(d) + u;
+const row = (k, v) => `<dt>${k}</dt><dd>${v}</dd>`;
+const dur = s => s == null ? '--' : (s >= 3600 ? Math.floor(s / 3600) + ' h ' + Math.floor(s % 3600 / 60) + ' min' : Math.floor(s / 60) + ' min');
+
+function render(s) {
+  document.title = s.unit + ' · Pi RTK Surveyor';
+  $('title').textContent = s.role + ' ' + s.unit + ' · rtkd ' + s.version;
+  const fx = $('fix');
+  fx.textContent = s.fix;
+  fx.className = 'fix ' + (s.fix === 'RTK FIX' ? 'good' : (s.fix === 'RTK FLT' ? 'warn' : 'bad'));
+  $('fixsub').textContent = s.utc ? s.utc : 'no GNSS time yet (needs sky)';
+  $('gnss').innerHTML =
+    row('Satellites (used / in view)', s.sats_used + ' / ' + s.sats_view) +
+    row('HDOP', f(s.hdop, 1)) +
+    row('Latitude', f(s.lat, 9, '°')) + row('Longitude', f(s.lon, 9, '°')) +
+    row('Elevation (MSL)', f(s.alt_msl, 3, ' m')) +
+    row('Est. error H / V', f(s.hacc, 3, ' m') + ' / ' + f(s.vacc, 3, ' m'));
+  const r = s.role === 'rover';
+  $('rover').className = 'card' + (r ? '' : ' hide');
+  $('base').className = 'card' + (r ? ' hide' : '');
+  if (r) {
+    $('roverdl').innerHTML =
+      row('Corrections', s.link.state + (s.link.base ? ' (' + s.link.base + ')' : '')) +
+      row('Last correction', s.link.age_ms == null ? '--' : (s.link.age_ms / 1000).toFixed(1) + ' s ago') +
+      row('Baseline to base', f(s.link.baseline_m, 1, ' m')) +
+      row('Job', s.survey.job + ' · ' + s.survey.points + ' points') +
+      row('Next point / code', s.survey.next + ' / ' + s.survey.code) +
+      row('State', s.survey.occupying ? 'occupying' : 'idle');
+  } else {
+    const b = s.base;
+    $('basedl').innerHTML =
+      row('Base state', b.state) +
+      row('Survey-in', b.observed_s == null ? '--' : b.observed_s + ' / ' + b.target_s + ' s') +
+      row('Position accuracy', f(b.acc_m, 2, ' m')) +
+      row('Base latitude', f(b.lat, 9, '°')) + row('Base longitude', f(b.lon, 9, '°')) +
+      row('Ellipsoidal height', f(b.h, 3, ' m')) +
+      row('Rovers streaming', b.rovers) +
+      row('RTCM frames sent', b.frames);
+  }
+  const y = s.sys;
+  $('sysdl').innerHTML =
+    row('CPU', f(y.temp_c, 1, ' °C') + ' · load ' + f(y.load, 2)) +
+    row('Memory used', y.mem_pct == null ? '--' : y.mem_pct + ' %') +
+    row('Uptime', dur(y.uptime_s)) +
+    row('Wi-Fi', y.rssi == null ? '--' : y.rssi + ' dBm') +
+    row('Power', y.throttled == null ? '--' : (y.throttled & 1 ? 'LOW VOLTAGE NOW' : (y.throttled & 0x10000 ? 'low earlier' : 'ok')));
+}
+
+async function poll() {
+  try { render(await (await fetch('/status.json', {cache: 'no-store'})).json()); }
+  catch (e) { $('fixsub').textContent = 'no connection to unit'; }
+}
+async function files() {
+  try {
+    const j = await (await fetch('/files.json')).json();
+    $('files').innerHTML =
+      j.jobs.map(n => `<li><a href="/jobs/${n}">${n}</a> &middot; <a href="/jobs/${n.replace('.csv', '.geojson')}">geojson</a></li>`).join('') +
+      j.raw.map(n => `<li><a href="/raw/${n}">${n}</a></li>`).join('') || '<li>none yet</li>';
+  } catch (e) {}
+}
+poll(); files(); setInterval(poll, 2000); setInterval(files, 30000);
+</script>
+</body>
+</html>

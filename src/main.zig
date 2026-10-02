@@ -29,6 +29,7 @@ comptime {
     _ = @import("sysinfo.zig");
     _ = @import("ui.zig");
     _ = @import("app.zig");
+    _ = @import("http.zig");
     _ = @import("screens.zig");
 }
 

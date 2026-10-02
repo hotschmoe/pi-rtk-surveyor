@@ -28,6 +28,7 @@ const rawlog = @import("rawlog.zig");
 const basepos = @import("basepos.zig");
 const sysinfo = @import("sysinfo.zig");
 const timeutil = @import("timeutil.zig");
+const http = @import("http.zig");
 
 const version = @import("main.zig").version;
 
@@ -40,6 +41,8 @@ const K = struct {
     const client: u64 = 6 << 32; // + slot
     const link: u64 = 7 << 32;
     const beacon: u64 = 8 << 32;
+    const http_listen: u64 = 9 << 32;
+    const http_client: u64 = 10 << 32; // + slot
 };
 
 const tick_ms = 50;
@@ -189,6 +192,8 @@ pub const App = struct {
     gga_sent_ms: u64 = 0,
     in_rate: Rate = .{},
     last_stats_ms: u64 = 0,
+    last_drv_state: lc29h.State = .probing,
+    http: ?http.Server = null,
 
     // ---- construction -----------------------------------------------------------------------------------------
 
@@ -240,6 +245,13 @@ pub const App = struct {
             .base => try self.setupBase(),
             .rover => try self.setupRover(),
         }
+
+        if (cfg.http_port != 0) {
+            if (http.Server.init(cfg.http_port, self.ep, K.http_listen, K.http_client)) |h| {
+                self.http = h;
+                log.info("web status on :{d}", .{cfg.http_port});
+            } else |e| log.warn("web status disabled ({s})", .{@errorName(e)});
+        }
     }
 
     fn openUart(self: *App) void {
@@ -257,6 +269,7 @@ pub const App = struct {
         self.tx.len = 0;
         self.dm = .{};
         self.drv = lc29h.Driver.init(self.drv.setup);
+        self.last_drv_state = .probing;
         log.info("receiver port {s} open at {d} baud", .{ cfg.gnss_device.get(), cfg.baud });
     }
 
@@ -337,6 +350,7 @@ pub const App = struct {
         self.renderUi(sys.monotonicMs(), true);
         if (self.raw) |*r| r.close();
         if (self.job) |*j| j.close();
+        if (self.http) |*h| h.deinit();
         if (self.caster) |*c| c.deinit();
         self.closeUart();
         if (self.oled) |*o| o.close();
@@ -372,6 +386,14 @@ pub const App = struct {
         if (tag == K.keys) return self.pollKeys(now);
         if (tag == K.listen) {
             if (self.caster) |*c| c.onListenReady(now);
+            return;
+        }
+        if (tag == K.http_listen) {
+            if (self.http) |*h| h.onListenReady(now);
+            return;
+        }
+        if (tag >= K.http_client) {
+            if (self.http) |*h| h.onClientEvent(@intCast(tag - K.http_client), ev.events, self);
             return;
         }
         if (tag >= K.client and tag < K.link) {
@@ -490,14 +512,17 @@ pub const App = struct {
             }
         } else {
             self.drv.tick(now, self);
+            if (self.drv.state != self.last_drv_state) self.onDriverState();
             self.tx.flush();
             if (self.last_rx_ms != 0 and now > self.last_rx_ms + rx_silent_ms and self.drv.state == .running) {
                 log.warn("receiver silent for {d} s; re-probing", .{rx_silent_ms / 1000});
                 self.drv = lc29h.Driver.init(self.drv.setup);
+                self.last_drv_state = .probing;
                 self.last_rx_ms = now;
             }
         }
         if (self.raw) |*r| r.tick(now);
+        if (self.http) |*h| h.tick(now);
 
         if (self.keys) |*k| if (k.pending()) self.pollKeys(now);
 
@@ -520,6 +545,19 @@ pub const App = struct {
         if (now >= self.last_ui_ms + ui_period_ms) {
             self.last_ui_ms = now;
             self.renderUi(now, false);
+        }
+    }
+
+    fn onDriverState(self: *App) void {
+        self.last_drv_state = self.drv.state;
+        switch (self.drv.state) {
+            .probing => {},
+            .configuring => log.info("receiver: {s} ({s}), configuring", .{ self.drv.version.get(), @tagName(self.drv.variant) }),
+            .running => {
+                log.info("receiver: ready, {d} setting(s) written, {d} unconfirmed", .{ self.drv.writes_sent, self.drv.failed_steps });
+                if (self.drv.failed_steps > 0) log.warn("receiver: {d} setting(s) did not confirm; check firmware", .{self.drv.failed_steps});
+            },
+            .failed => log.err("receiver: {s}", .{self.drv.fail.get()}),
         }
     }
 
@@ -667,6 +705,7 @@ pub const App = struct {
             .base = .{ .survey = .{ .secs = cfg.survey_secs, .acc_m = cfg.survey_acc_m } },
             .force_survey = true,
         });
+        self.last_drv_state = .probing;
         log.info("base: stored position discarded, surveying in again", .{});
         self.setToast(" RESURVEY", "Stored position", "discarded.", "Surveying in...", now + 2500);
     }
@@ -722,6 +761,61 @@ pub const App = struct {
                 self.code_idx = if (b == .up) (self.code_idx + 1) % n else (self.code_idx + n - 1) % n;
             },
         }
+    }
+
+    // ---- web status provider ----------------------------------------------------------------------------------------
+
+    pub fn logDir(self: *App) []const u8 {
+        return self.cfg.log_dir.get();
+    }
+
+    pub fn currentJob(self: *App) []const u8 {
+        return std.fmt.bufPrint(&job_name_buf, "JOB{d}", .{self.job_num}) catch "JOB1";
+    }
+
+    pub fn statusJson(self: *App, buf: []u8) []const u8 {
+        const now = sys.monotonicMs();
+        const rx = &self.rx;
+        var utc_buf: [24]u8 = undefined;
+        var n: usize = 0;
+        const put = struct {
+            fn go(b: []u8, at: *usize, comptime fmt: []const u8, args: anytype) void {
+                const s = std.fmt.bufPrint(b[at.*..], fmt, args) catch return;
+                at.* += s.len;
+            }
+        }.go;
+        put(buf, &n, "{{\"unit\":\"{s}\",\"role\":\"{s}\",\"version\":\"{s}\",", .{ self.cfg.name.get(), @tagName(self.role), version });
+        if (rx.unixTime()) |u| put(buf, &n, "\"utc\":\"{s}\",", .{timeutil.iso(&utc_buf, u)}) else put(buf, &n, "\"utc\":null,", .{});
+        put(buf, &n, "\"fix\":\"{s}\",\"sats_used\":{d},\"sats_view\":{d},\"hdop\":{?d:.1},", .{ rx.liveQuality(now).label(), rx.sats_used, rx.satsInView(), rx.hdop });
+        put(buf, &n, "\"lat\":{?d:.9},\"lon\":{?d:.9},\"alt_msl\":{?d:.3},\"hacc\":{?d:.3},\"vacc\":{?d:.3},", .{ rx.lat, rx.lon, rx.alt_msl, rx.hacc(now), rx.vacc(now) });
+        if (self.link) |*l| {
+            const age: ?u64 = if (l.last_frame_ms == 0) null else now -| l.last_frame_ms;
+            put(buf, &n, "\"link\":{{\"state\":\"{s}\",\"base\":\"{s}\",\"frames\":{d},\"age_ms\":{?d},\"baseline_m\":{?d:.1}}},", .{ @tagName(l.state), l.target_name.get(), l.frames_in, age, self.base_seen.baseline_m });
+            const jc: u32 = if (self.job) |j| j.count else 0;
+            const jn: u32 = if (self.job) |j| j.next_id else 1;
+            put(buf, &n, "\"survey\":{{\"job\":\"{s}\",\"points\":{d},\"next\":{d},\"code\":\"{s}\",\"occupying\":{s}}},", .{ self.currentJob(), jc, jn, self.code(), if (self.occ.phase == .occupying) "true" else "false" });
+        }
+        if (self.role == .base) {
+            const sv = rx.svin;
+            const state: []const u8 = if ((sv != null and sv.?.state == 2) or self.from_store) "ready" else if (rx.sats_used == 0) "no sky" else "surveying";
+            const p = self.baseLlh();
+            const frames: u64 = if (self.caster) |*c| c.frames_out else 0;
+            const rovers: u8 = if (self.caster) |*c| c.streaming() else 0;
+            put(buf, &n, "\"base\":{{\"state\":\"{s}\",\"observed_s\":{?d},\"target_s\":{?d},\"acc_m\":{?d:.2},\"lat\":{?d:.9},\"lon\":{?d:.9},\"h\":{?d:.3},\"rovers\":{d},\"frames\":{d}}},", .{
+                state,
+                if (sv) |x| @as(?u32, x.observed_s) else null,
+                if (sv) |x| @as(?u32, x.cfg_dur_s) else null,
+                if (sv) |x| x.acc_m else null,
+                if (p) |x| @as(?f64, x.lat) else null,
+                if (p) |x| @as(?f64, x.lon) else null,
+                if (p) |x| @as(?f64, x.h) else null,
+                rovers,
+                frames,
+            });
+        }
+        const y = self.info;
+        put(buf, &n, "\"sys\":{{\"temp_c\":{?d:.1},\"load\":{?d:.2},\"mem_pct\":{?d},\"uptime_s\":{?d},\"rssi\":{?d},\"throttled\":{?d}}}}}", .{ y.temp_c, y.load1, y.mem_used_pct, y.uptime_s, y.rssi_dbm, y.throttled });
+        return buf[0..n];
     }
 
     // ---- display ------------------------------------------------------------------------------------------------------------------
