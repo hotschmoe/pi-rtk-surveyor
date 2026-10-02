@@ -3,7 +3,8 @@
 #   scripts/provision.sh rtk1|rtk2
 # Creates the 'rtk' service user (groups dialout/spi/gpio), /etc/rtk and
 # /var/lib/rtk, installs the systemd unit and the unit's config if none exists,
-# disables the old Python service, and enables rtkd plus the keypad power-off path unit.
+# disables the old Python service, makes the journal persistent (capped at 30 MB), and enables
+# rtkd plus the keypad power-off path unit.
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 u="${1:-}"; [ -n "$u" ] || die "usage: provision.sh rtk1|rtk2"
@@ -12,6 +13,7 @@ echo "== provisioning $u via $host"
 push "$REPO/deploy/rtkd.service" "$host" /tmp/rtkd.service
 push "$REPO/deploy/units/$u.conf" "$host" /tmp/rtk.conf.new
 push "$REPO/deploy/rtk-poweroff.path" "$host" /tmp/rtk-poweroff.path
+push "$REPO/deploy/journald-rtk.conf" "$host" /tmp/journald-rtk.conf
 push "$REPO/deploy/rtk-poweroff.service" "$host" /tmp/rtk-poweroff.service
 ssh "$host" 'bash -s' <<'REMOTE'
 set -e
@@ -27,9 +29,13 @@ sudo install -d -o rtk -g rtk -m755 /var/lib/rtk
 sudo install -m644 /tmp/rtkd.service /etc/systemd/system/rtkd.service
 sudo rm -f /etc/sudoers.d/rtk
 sudo install -m644 /tmp/rtk-poweroff.path /tmp/rtk-poweroff.service /etc/systemd/system/
+sudo install -D -m644 /tmp/journald-rtk.conf /etc/systemd/journald.conf.d/90-rtk-persistent.conf
+sudo install -d -m2755 -g systemd-journal /var/log/journal
+sudo systemctl restart systemd-journald
+sudo journalctl --flush
 sudo systemctl daemon-reload
 sudo systemctl enable rtkd
 sudo systemctl enable --now rtk-poweroff.path
-rm -f /tmp/rtkd.service /tmp/rtk.conf.new /tmp/rtk-poweroff.path /tmp/rtk-poweroff.service
+rm -f /tmp/rtkd.service /tmp/rtk.conf.new /tmp/rtk-poweroff.path /tmp/rtk-poweroff.service /tmp/journald-rtk.conf
 echo "provisioned: $(hostname)"
 REMOTE
