@@ -32,5 +32,32 @@ pub fn build(b: *std.Build) void {
     const tests = b.addTest(.{ .root_module = root });
     const run_tests = b.addRunArtifact(tests);
     run_tests.setCwd(b.path("."));
-    b.step("test", "Run unit tests").dependOn(&run_tests.step);
+    const test_step = b.step("test", "Run unit tests");
+    test_step.dependOn(&run_tests.step);
+
+    // The map viewer's geometry core (src/geom): unit tests natively, and the WebAssembly build that
+    // the daemon embeds as src/map.wasm. The built file is committed so the daemon build needs no extra
+    // step; `scripts/build-wasm.sh` rebuilds it and `tools/test_wasm.js` fails if it is stale.
+    const geom_tests = b.addTest(.{ .root_module = b.createModule(.{
+        .root_source_file = b.path("src/geom/wasm.zig"),
+        .target = target,
+        .optimize = optimize,
+    }) });
+    test_step.dependOn(&b.addRunArtifact(geom_tests).step);
+
+    const wasm_opt = b.option(std.builtin.OptimizeMode, "wasm-optimize", "Optimize mode of the wasm build (default ReleaseSmall)") orelse .ReleaseSmall;
+    const wasm = b.addExecutable(.{ .name = "map", .root_module = b.createModule(.{
+        .root_source_file = b.path("src/geom/wasm.zig"),
+        .target = b.resolveTargetQuery(.{ .cpu_arch = .wasm32, .os_tag = .freestanding }),
+        .optimize = wasm_opt,
+        .strip = true,
+        .single_threaded = true,
+    }) });
+    wasm.entry = .disabled;
+    wasm.rdynamic = true;
+    wasm.stack_size = 64 * 1024;
+    const wasm_out = b.option([]const u8, "wasm-out", "Copy the built wasm to this path under the source tree (default src/map.wasm)") orelse "src/map.wasm";
+    const update = b.addUpdateSourceFiles();
+    update.addCopyFileToSource(wasm.getEmittedBin(), wasm_out);
+    b.step("wasm", "Build the viewer's WebAssembly core into src/map.wasm").dependOn(&update.step);
 }
