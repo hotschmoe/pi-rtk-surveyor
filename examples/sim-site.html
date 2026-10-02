@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RTK map viewer</title>
+<style>
+:root{--bg:#f4f5f7;--card:#fff;--ink:#14181f;--dim:#5b6573;--line:#d9dde3;--accent:#1f5fbf;--minor:#b98a5a;--major:#8a4b12;--tin:#c4c8ce;--pt:#111}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1318;--card:#171c23;--ink:#e8ebf0;--dim:#97a1af;--line:#2a323d;--accent:#7fb0ff;--minor:#b98a5a;--major:#e0a468;--tin:#3a424d;--pt:#f2f2f2}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.35 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;display:flex;flex-direction:column}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--card)}
+header h1{font-size:15px;margin:0 8px 0 0;font-weight:700}
+button,select{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:6px;padding:5px 10px}
+button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+label{display:inline-flex;align-items:center;gap:4px;color:var(--dim)}
+#wrap{position:relative;flex:1;min-height:0}
+canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:grab}
+#tip{position:absolute;pointer-events:none;background:var(--card);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:12px;display:none;white-space:pre;box-shadow:0 2px 8px #0003}
+#stats{position:absolute;left:10px;bottom:10px;background:var(--card);border:1px solid var(--line);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--dim);max-width:70%}
+#msg{pointer-events:none;position:absolute;inset:0;display:none;align-items:center;justify-content:center;text-align:center;color:var(--dim);padding:20px}
+#legend{position:absolute;right:10px;bottom:10px;background:var(--card);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:11px;color:var(--dim)}
+#bar{height:10px;width:140px;border-radius:3px;margin:2px 0}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">RTK map</h1>
+  <button id="b2d" class="on">Plan</button><button id="b3d">3D</button>
+  <label><input type="checkbox" id="cTint" checked> tint</label>
+  <label><input type="checkbox" id="cCont" checked> contours</label>
+  <label><input type="checkbox" id="cTin"> TIN</label>
+  <label><input type="checkbox" id="cPts" checked> points</label>
+  <label><input type="checkbox" id="cLab" checked> labels</label>
+  <label>interval <select id="sInt"><option value="0">auto</option><option>0.1</option><option>0.25</option><option>0.5</option><option>1</option><option>2</option><option>5</option></select></label>
+  <label id="exl" style="display:none">vertical x<input type="range" id="rEx" min="1" max="10" step="0.5" value="2"></label>
+  <button id="bFit">Fit</button><button id="bPng">Save PNG</button>
+</header>
+<div id="wrap">
+  <canvas id="cv"></canvas>
+  <div id="tip"></div><div id="msg"></div>
+  <div id="stats"></div>
+  <div id="legend"><div id="lmax"></div><div id="bar"></div><div id="lmin"></div></div>
+</div>
+<script>window.RTK_DATA = {"type": "FeatureCollection", "title": "Simulated site (rtkd end-to-end)", "features": [{"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.505619987, 53.36133699, 60.009]}, "properties": {"id": "001", "time": "2026-10-02T18:39:27Z", "code": "COR", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.50260943, 53.36133701, 70.0]}, "properties": {"id": "002", "time": "2026-10-02T18:39:38Z", "code": "COR", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.502609413, 53.36313365, 69.999]}, "properties": {"id": "003", "time": "2026-10-02T18:39:49Z", "code": "COR", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.505619983, 53.36313364, 60.002]}, "properties": {"id": "004", "time": "2026-10-02T18:40:01Z", "code": "COR", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.505243663, 53.361337, 61.257]}, "properties": {"id": "005", "time": "2026-10-02T18:40:13Z", "code": "FNC", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.505243667, 53.363133583, 61.223]}, "properties": {"id": "006", "time": "2026-10-02T18:40:24Z", "code": "FNC", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.50486739, 53.361336987, 62.506]}, "properties": {"id": "007", "time": "2026-10-02T18:40:36Z", "code": "FNC", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.504867337, 53.363133623, 62.42]}, "properties": {"id": "008", "time": "2026-10-02T18:40:48Z", "code": "FNC", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.504491017, 53.361336987, 63.778]}, "properties": {"id": "009", "time": "2026-10-02T18:40:59Z", "code": "FNC", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.504491013, 53.36313364, 63.68]}, "properties": {"id": "010", "time": "2026-10-02T18:41:10Z", "code": "FNC", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.50411467, 53.361337, 65.073]}, "properties": {"id": "011", "time": "2026-10-02T18:41:22Z", "code": "FNC", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.504114673, 53.363133607, 64.981]}, "properties": {"id": "012", "time": "2026-10-02T18:41:34Z", "code": "FNC", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.503738317, 53.36133699, 66.334]}, "properties": {"id": "013", "time": "2026-10-02T18:41:45Z", "code": "FNC", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.503738373, 53.363133603, 66.248]}, "properties": {"id": "014", "time": "2026-10-02T18:41:56Z", "code": "FNC", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.503362037, 53.361336973, 67.551]}, "properties": {"id": "015", "time": "2026-10-02T18:42:08Z", "code": "FNC", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.503362017, 53.363133607, 67.502]}, "properties": {"id": "016", "time": "2026-10-02T18:42:20Z", "code": "FNC", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.502985697, 53.361336993, 68.771]}, "properties": {"id": "017", "time": "2026-10-02T18:42:31Z", "code": "FNC", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.50298573, 53.363133633, 68.757]}, "properties": {"id": "018", "time": "2026-10-02T18:42:43Z", "code": "FNC", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.505620037, 53.36156158, 59.993]}, "properties": {"id": "019", "time": "2026-10-02T18:42:55Z", "code": "FNC", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.502609407, 53.361561583, 70.019]}, "properties": {"id": "020", "time": "2026-10-02T18:43:06Z", "code": "FNC", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.505619977, 53.36178617, 60.0]}, "properties": {"id": "021", "time": "2026-10-02T18:43:17Z", "code": "FNC", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.502609397, 53.361786143, 70.055]}, "properties": {"id": "022", "time": "2026-10-02T18:43:29Z", "code": "FNC", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.50561999, 53.362010733, 59.994]}, "properties": {"id": "023", "time": "2026-10-02T18:43:41Z", "code": "FNC", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.502609443, 53.362010713, 70.087]}, "properties": {"id": "024", "time": "2026-10-02T18:43:52Z", "code": "FNC", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.505619983, 53.362235337, 59.976]}, "properties": {"id": "025", "time": "2026-10-02T18:44:04Z", "code": "FNC", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.502609353, 53.362235293, 70.065]}, "properties": {"id": "026", "time": "2026-10-02T18:44:16Z", "code": "FNC", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.50561994, 53.362459867, 59.926]}, "properties": {"id": "027", "time": "2026-10-02T18:44:27Z", "code": "FNC", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.50260939, 53.3624599, 70.028]}, "properties": {"id": "028", "time": "2026-10-02T18:44:38Z", "code": "FNC", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.505619977, 53.36268446, 59.924]}, "properties": {"id": "029", "time": "2026-10-02T18:44:50Z", "code": "FNC", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.502609357, 53.362684437, 69.999]}, "properties": {"id": "030", "time": "2026-10-02T18:45:02Z", "code": "FNC", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.505619943, 53.362909023, 59.971]}, "properties": {"id": "031", "time": "2026-10-02T18:45:13Z", "code": "FNC", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.502609353, 53.362909083, 69.994]}, "properties": {"id": "032", "time": "2026-10-02T18:45:25Z", "code": "FNC", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.504867353, 53.36178615, 62.616]}, "properties": {"id": "033", "time": "2026-10-02T18:45:37Z", "code": "PT", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.504867353, 53.362235283, 62.269]}, "properties": {"id": "034", "time": "2026-10-02T18:45:48Z", "code": "PT", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.50486737, 53.362684413, 61.24]}, "properties": {"id": "035", "time": "2026-10-02T18:45:59Z", "code": "PT", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.504114713, 53.36178615, 66.456]}, "properties": {"id": "036", "time": "2026-10-02T18:46:11Z", "code": "PT", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.504114647, 53.3622353, 66.814]}, "properties": {"id": "037", "time": "2026-10-02T18:46:23Z", "code": "PT", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.50411469, 53.362684423, 64.779]}, "properties": {"id": "038", "time": "2026-10-02T18:46:34Z", "code": "PT", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.503362033, 53.361786163, 68.594]}, "properties": {"id": "039", "time": "2026-10-02T18:46:46Z", "code": "PT", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.50336204, 53.362235357, 68.955]}, "properties": {"id": "040", "time": "2026-10-02T18:46:58Z", "code": "PT", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.50336213, 53.362684453, 67.623]}, "properties": {"id": "041", "time": "2026-10-02T18:47:09Z", "code": "PT", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.504265233, 53.36187598, 65.959]}, "properties": {"id": "042", "time": "2026-10-02T18:47:20Z", "code": "BLD", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.503964193, 53.361875957, 67.773]}, "properties": {"id": "043", "time": "2026-10-02T18:47:32Z", "code": "BLD", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.50396413, 53.362100567, 68.275]}, "properties": {"id": "044", "time": "2026-10-02T18:47:44Z", "code": "BLD", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.50426521, 53.362100567, 66.233]}, "properties": {"id": "045", "time": "2026-10-02T18:47:55Z", "code": "BLD", "fix": "RTK_FIXED", "h_acc": 0.013, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.503512523, 53.362594637, 67.314]}, "properties": {"id": "046", "time": "2026-10-02T18:48:07Z", "code": "TRE", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.503060973, 53.362414947, 68.805]}, "properties": {"id": "047", "time": "2026-10-02T18:48:19Z", "code": "TRE", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.505168307, 53.362235333, 61.322]}, "properties": {"id": "048", "time": "2026-10-02T18:48:30Z", "code": "TRE", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-6.504716827, 53.362594627, 61.557]}, "properties": {"id": "049", "time": "2026-10-02T18:48:41Z", "code": "TRE", "fix": "RTK_FIXED", "h_acc": 0.012, "v_acc": 0.018}}]};/*INLINE_DATA*/</script>
+<script>
+// ==== geometry (testable; extracted by tools/test_viewer.js) ====
+function llToLocal(features) {
+  const f = features.filter(x => x.geometry && x.geometry.type === 'Point');
+  if (!f.length) return { pts: [], lat0: 0, lon0: 0 };
+  let lat0 = 0, lon0 = 0;
+  for (const x of f) { lon0 += x.geometry.coordinates[0]; lat0 += x.geometry.coordinates[1]; }
+  lat0 /= f.length; lon0 /= f.length;
+  const p = lat0 * Math.PI / 180;
+  const mLat = 111132.92 - 559.82 * Math.cos(2 * p) + 1.175 * Math.cos(4 * p);
+  const mLon = 111412.84 * Math.cos(p) - 93.5 * Math.cos(3 * p);
+  const pts = f.map(x => {
+    const c = x.geometry.coordinates, pr = x.properties || {};
+    return { x: (c[0] - lon0) * mLon, y: (c[1] - lat0) * mLat, z: c[2], id: String(pr.id || ''), code: pr.code || '',
+             hacc: pr.h_acc, vacc: pr.v_acc, fix: pr.fix || '', time: pr.time || '' };
+  });
+  return { pts, lat0, lon0 };
+}
+
+function niceStep(x) {
+  const e = Math.pow(10, Math.floor(Math.log10(x)));
+  for (const m of [1, 2, 2.5, 5, 10]) if (m * e >= x) return m * e;
+  return 10 * e;
+}
+
+// Bowyer-Watson Delaunay triangulation of {x,y} points. Returns [[i,j,k], ...] (indices into P).
+function delaunay(P) {
+  const n = P.length;
+  if (n < 3) return [];
+  let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+  for (const p of P) { minx = Math.min(minx, p.x); maxx = Math.max(maxx, p.x); miny = Math.min(miny, p.y); maxy = Math.max(maxy, p.y); }
+  const d = Math.max(maxx - minx, maxy - miny, 1), mx = (minx + maxx) / 2, my = (miny + maxy) / 2;
+  const V = P.map(p => ({ x: p.x, y: p.y }));
+  // A very large super-triangle: a small one swallows near-collinear hull triangles (huge circumcircles).
+  const K = 1000;
+  V.push({ x: mx - K * d, y: my - d }, { x: mx, y: my + K * d }, { x: mx + K * d, y: my - d });
+  const mk = (a, b, c) => {
+    const A = V[a], B = V[b], C = V[c];
+    const dd = 2 * (A.x * (B.y - C.y) + B.x * (C.y - A.y) + C.x * (A.y - B.y));
+    const ux = ((A.x * A.x + A.y * A.y) * (B.y - C.y) + (B.x * B.x + B.y * B.y) * (C.y - A.y) + (C.x * C.x + C.y * C.y) * (A.y - B.y)) / dd;
+    const uy = ((A.x * A.x + A.y * A.y) * (C.x - B.x) + (B.x * B.x + B.y * B.y) * (A.x - C.x) + (C.x * C.x + C.y * C.y) * (B.x - A.x)) / dd;
+    return { a, b, c, cx: ux, cy: uy, r2: (A.x - ux) * (A.x - ux) + (A.y - uy) * (A.y - uy) };
+  };
+  let T = [mk(n, n + 1, n + 2)];
+  for (let i = 0; i < n; i++) {
+    const p = V[i], keep = [], edges = new Map();
+    for (const t of T) {
+      const dx = p.x - t.cx, dy = p.y - t.cy;
+      if (dx * dx + dy * dy < t.r2 - 1e-9) {
+        for (const [u, v] of [[t.a, t.b], [t.b, t.c], [t.c, t.a]]) {
+          const k = u < v ? u + ',' + v : v + ',' + u;
+          edges.set(k, edges.has(k) ? null : [u, v]);
+        }
+      } else keep.push(t);
+    }
+    for (const e of edges.values()) if (e) keep.push(mk(e[0], e[1], i));
+    T = keep;
+  }
+  return T.filter(t => t.a < n && t.b < n && t.c < n).map(t => [t.a, t.b, t.c]);
+}
+
+// Delaunay on de-duplicated points (identical positions would break the circumcircles).
+function buildTin(pts) {
+  const seen = new Map(), idx = [], uniq = [];
+  pts.forEach((p, i) => {
+    const k = Math.round(p.x * 1000) + ',' + Math.round(p.y * 1000);
+    if (!seen.has(k)) { seen.set(k, i); idx.push(i); uniq.push(p); }
+  });
+  const tris = delaunay(uniq).map(t => t.map(j => idx[j]));
+  // nearest-neighbour spacing sets how long an edge may be before it is "across empty ground"
+  const nn = uniq.map((p, i) => { let b = Infinity; for (let j = 0; j < uniq.length; j++) if (j !== i) b = Math.min(b, Math.hypot(p.x - uniq[j].x, p.y - uniq[j].y)); return b; }).filter(isFinite).sort((a, b) => a - b);
+  const spacing = nn.length ? nn[nn.length >> 1] : 0;
+  const maxEdge = Math.max(15, 2.5 * spacing);
+  const good = tris.filter(([a, b, c]) => {
+    const A = pts[a], B = pts[b], C = pts[c];
+    const e = [Math.hypot(A.x - B.x, A.y - B.y), Math.hypot(B.x - C.x, B.y - C.y), Math.hypot(C.x - A.x, C.y - A.y)];
+    const s = (e[0] + e[1] + e[2]) / 2, area = Math.sqrt(Math.max(s * (s - e[0]) * (s - e[1]) * (s - e[2]), 0));
+    if (Math.max(...e) > maxEdge || area < 1e-6) return false;
+    const circ = e[0] * e[1] * e[2] / (4 * area), inr = area / s;
+    return inr / circ >= 0.04;
+  });
+  return { tris: good, maxEdge, spacing };
+}
+
+// Contour polylines of the TIN at `level`: [[ [x,y], ... ], ...]
+function contourLines(pts, tris, level) {
+  const segs = [], L = level;
+  const cross = (i, j) => {
+    // Canonical order, so the two triangles sharing an edge compute bit-identical points.
+    const lo = Math.min(i, j), hi = Math.max(i, j), a = pts[lo], b = pts[hi], t = (L - a.z) / (b.z - a.z);
+    return { k: lo + '-' + hi, x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) };
+  };
+  for (const [a, b, c] of tris) {
+    const hit = [];
+    for (const [i, j] of [[a, b], [b, c], [c, a]]) {
+      const zi = pts[i].z - L, zj = pts[j].z - L;
+      if ((zi < 0) !== (zj < 0)) hit.push(cross(i, j));
+    }
+    if (hit.length === 2) segs.push(hit);
+  }
+  const adj = new Map();
+  segs.forEach((s, n) => s.forEach(p => { if (!adj.has(p.k)) adj.set(p.k, []); adj.get(p.k).push(n); }));
+  const used = new Array(segs.length).fill(false), lines = [];
+  const walk = (start, startPt) => {
+    const line = [startPt]; let cur = start, from = startPt.k;
+    while (cur !== undefined && !used[cur]) {
+      used[cur] = true;
+      const s = segs[cur], nextP = s[0].k === from ? s[1] : s[0];
+      line.push(nextP);
+      const nb = (adj.get(nextP.k) || []).find(m => !used[m]);
+      from = nextP.k; cur = nb;
+    }
+    return line.map(p => [p.x, p.y]);
+  };
+  // open lines first (start at an endpoint used once), then closed loops
+  segs.forEach((s, n) => { if (used[n]) return; for (const p of s) if (adj.get(p.k).length === 1) { lines.push(walk(n, p)); return; } });
+  segs.forEach((s, n) => { if (!used[n]) lines.push(walk(n, s[0])); });
+  return lines;
+}
+// ==== end geometry ====
+
+// ---------------------------------------------------------------- UI
+const $ = id => document.getElementById(id);
+const cv = $('cv'), ctx = cv.getContext('2d');
+let S = { pts: [], tris: [], mode: '2d', zmin: 0, zmax: 1, interval: 1, cx: 0, cy: 0, sc: 1, yaw: 0.6, pitch: 0.9, ex: 2, hover: -1, lat0: 0, lon0: 0, title: 'RTK map', contours: [] };
+const ramp = ['#2e7d4f', '#9bc17a', '#e8dba0', '#c9a26b', '#8c5a3c'];
+function hex(h) { return [1, 3, 5].map(i => parseInt(h.substr(i, 2), 16)); }
+function tint(t) {
+  t = Math.min(1, Math.max(0, t)) * (ramp.length - 1);
+  const i = Math.min(ramp.length - 2, Math.floor(t)), f = t - i, a = hex(ramp[i]), b = hex(ramp[i + 1]);
+  return a.map((v, k) => Math.round(v + (b[k] - v) * f));
+}
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+function load(gj) {
+  const feats = (gj && gj.features) || [];
+  const r = llToLocal(feats);
+  S.pts = r.pts; S.lat0 = r.lat0; S.lon0 = r.lon0;
+  if (r.pts.length < 3) { msg('Need at least 3 points to draw a surface (have ' + r.pts.length + ').'); }
+  else msg('');
+  const tin = buildTin(S.pts);
+  S.tris = tin.tris;
+  let zmin = Infinity, zmax = -Infinity;
+  for (const p of S.pts) { zmin = Math.min(zmin, p.z); zmax = Math.max(zmax, p.z); }
+  S.zmin = zmin; S.zmax = zmax;
+  if (r.pts.length >= 3 && !S.tris.length) msg('The points are collinear or too far apart to form a surface.');
+  recontour(); fit(); stats(tin);
+}
+function msg(t) { const m = $('msg'); m.style.display = t ? 'flex' : 'none'; m.textContent = t; }
+
+function recontour() {
+  const sel = parseFloat($('sInt').value);
+  S.interval = sel > 0 ? sel : niceStep(Math.max((S.zmax - S.zmin) / 12, 0.05));
+  S.contours = [];
+  if (!S.tris.length) return;
+  const start = Math.ceil(S.zmin / S.interval - 1e-9) * S.interval;
+  for (let z = start; z <= S.zmax + 1e-9; z += S.interval) {
+    const zz = Math.round(z / S.interval) * S.interval;
+    const major = Math.abs(zz / (S.interval * 5) - Math.round(zz / (S.interval * 5))) < 1e-6;
+    for (const line of contourLines(S.pts, S.tris, zz)) S.contours.push({ z: zz, major, line });
+  }
+}
+
+function stats(tin) {
+  const p = S.pts; if (!p.length) { $('stats').textContent = ''; return; }
+  const acc = p.map(q => q.hacc).filter(v => v != null).sort((a, b) => a - b);
+  const ext = (a) => Math.max(...a) - Math.min(...a);
+  $('stats').textContent = p.length + ' points · ' + ext(p.map(q => q.x)).toFixed(0) + ' × ' + ext(p.map(q => q.y)).toFixed(0) + ' m · relief ' +
+    (S.zmax - S.zmin).toFixed(2) + ' m · contour ' + S.interval + ' m' + (acc.length ? ' · median H ±' + (acc[acc.length >> 1] * 100).toFixed(1) + ' cm' : '') +
+    (S.tris.length ? ' · ' + S.tris.length + ' triangles' : '');
+  $('lmax').textContent = S.zmax.toFixed(2) + ' m'; $('lmin').textContent = S.zmin.toFixed(2) + ' m';
+  $('bar').style.background = 'linear-gradient(to right,' + ramp.join(',') + ')';
+}
+
+function size() {
+  const r = cv.getBoundingClientRect(), d = window.devicePixelRatio || 1;
+  cv.width = Math.round(r.width * d); cv.height = Math.round(r.height * d);
+  ctx.setTransform(d, 0, 0, d, 0, 0);
+  return [r.width, r.height];
+}
+function fit() {
+  if (!S.pts.length) return;
+  const [w, h] = size();
+  const xs = S.pts.map(p => p.x), ys = S.pts.map(p => p.y);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  S.cx = (x0 + x1) / 2; S.cy = (y0 + y1) / 2;
+  S.sc = 0.82 * Math.min(w / Math.max(x1 - x0, 1), h / Math.max(y1 - y0, 1));
+  draw();
+}
+
+// plan: world (x east, y north) -> screen
+function P2(x, y, w, h) { return [w / 2 + (x - S.cx) * S.sc, h / 2 - (y - S.cy) * S.sc]; }
+// 3D: orthographic, z scaled by exaggeration
+function P3(x, y, z, w, h) {
+  const X = x - S.cx, Y = y - S.cy, Z = (z - (S.zmin + S.zmax) / 2) * S.ex;
+  const cyaw = Math.cos(S.yaw), syaw = Math.sin(S.yaw), cp = Math.cos(S.pitch), sp = Math.sin(S.pitch);
+  const x1 = X * cyaw - Y * syaw, y1 = X * syaw + Y * cyaw;
+  return [w / 2 + x1 * S.sc, h / 2 - (y1 * sp + Z * cp) * S.sc, y1 * cp - Z * sp];
+}
+
+function draw() {
+  const [w, h] = size();
+  ctx.clearRect(0, 0, w, h);
+  if (S.pts.length < 3 || !S.tris.length) { drawPoints2D(w, h); return; }
+  if (S.mode === '2d') draw2D(w, h); else draw3D(w, h);
+}
+
+function zt(z) { return (z - S.zmin) / Math.max(S.zmax - S.zmin, 1e-9); }
+
+function draw2D(w, h) {
+  const pts = S.pts;
+  if ($('cTint').checked) for (const [a, b, c] of S.tris) {
+    const t = zt((pts[a].z + pts[b].z + pts[c].z) / 3), col = tint(t);
+    ctx.fillStyle = 'rgb(' + col + ')'; ctx.globalAlpha = 0.55;
+    ctx.beginPath(); for (const [k, i] of [a, b, c].entries()) { const q = P2(pts[i].x, pts[i].y, w, h); k ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); }
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  if ($('cTin').checked) {
+    ctx.strokeStyle = css('--tin'); ctx.lineWidth = 0.6; ctx.beginPath();
+    for (const [a, b, c] of S.tris) { const A = P2(pts[a].x, pts[a].y, w, h), B = P2(pts[b].x, pts[b].y, w, h), C = P2(pts[c].x, pts[c].y, w, h); ctx.moveTo(A[0], A[1]); ctx.lineTo(B[0], B[1]); ctx.lineTo(C[0], C[1]); ctx.closePath(); }
+    ctx.stroke();
+  }
+  if ($('cCont').checked) {
+    for (const major of [false, true]) {
+      ctx.strokeStyle = css(major ? '--major' : '--minor'); ctx.lineWidth = major ? 1.6 : 0.8; ctx.beginPath();
+      for (const c of S.contours) if (c.major === major) c.line.forEach((q, i) => { const s = P2(q[0], q[1], w, h); i ? ctx.lineTo(s[0], s[1]) : ctx.moveTo(s[0], s[1]); });
+      ctx.stroke();
+    }
+    ctx.fillStyle = css('--major'); ctx.font = '11px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (const c of S.contours) if (c.major && c.line.length > 4) { const q = c.line[c.line.length >> 1], s = P2(q[0], q[1], w, h); ctx.fillStyle = css('--card'); ctx.fillRect(s[0] - 14, s[1] - 7, 28, 14); ctx.fillStyle = css('--major'); ctx.fillText(c.z.toFixed(c.z % 1 ? 1 : 0), s[0], s[1]); }
+  }
+  drawPoints2D(w, h);
+  furniture(w, h);
+}
+
+function drawPoints2D(w, h) {
+  if (!$('cPts').checked && S.tris.length) return;
+  ctx.font = '10px system-ui'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  S.pts.forEach((p, i) => {
+    const s = P2(p.x, p.y, w, h), fixed = p.fix === 'RTK_FIXED';
+    ctx.beginPath(); ctx.arc(s[0], s[1], i === S.hover ? 5 : 3, 0, 7);
+    if (fixed) { ctx.fillStyle = css('--pt'); ctx.fill(); } else { ctx.strokeStyle = '#c0392b'; ctx.lineWidth = 1.5; ctx.stroke(); }
+    if ($('cLab').checked && S.sc > 0.4) { ctx.fillStyle = css('--ink'); ctx.fillText(p.id.replace(/^0+/, '') + ' ' + p.z.toFixed(2) + (p.code && p.code !== 'PT' ? ' ' + p.code : ''), s[0] + 5, s[1] - 4); }
+  });
+}
+
+function furniture(w, h) {
+  // north arrow (plan view is always north-up)
+  ctx.strokeStyle = css('--ink'); ctx.fillStyle = css('--ink'); ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(w - 30, 70); ctx.lineTo(w - 30, 32); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(w - 30, 28); ctx.lineTo(w - 35, 40); ctx.lineTo(w - 25, 40); ctx.closePath(); ctx.fill();
+  ctx.font = 'bold 12px system-ui'; ctx.textAlign = 'center'; ctx.fillText('N', w - 30, 82);
+  // scale bar
+  const m = niceStep(90 / S.sc), px = m * S.sc;
+  ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(12, h - 60); ctx.lineTo(12 + px, h - 60); ctx.stroke();
+  ctx.font = '11px system-ui'; ctx.textAlign = 'left'; ctx.fillText(m + ' m', 12, h - 66);
+}
+
+function draw3D(w, h) {
+  const pts = S.pts, L = [0.35, 0.55, 0.75];
+  const ln = Math.hypot(...L), light = L.map(v => v / ln);
+  const items = S.tris.map(([a, b, c]) => {
+    const A = P3(pts[a].x, pts[a].y, pts[a].z, w, h), B = P3(pts[b].x, pts[b].y, pts[b].z, w, h), C = P3(pts[c].x, pts[c].y, pts[c].z, w, h);
+    // shading from the world-space normal (z exaggerated)
+    const u = [pts[b].x - pts[a].x, pts[b].y - pts[a].y, (pts[b].z - pts[a].z) * S.ex], v = [pts[c].x - pts[a].x, pts[c].y - pts[a].y, (pts[c].z - pts[a].z) * S.ex];
+    let n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+    if (n[2] < 0) n = n.map(q => -q);
+    const nl = Math.hypot(...n) || 1, lam = Math.max(0.25, (n[0] * light[0] + n[1] * light[1] + n[2] * light[2]) / nl);
+    return { A, B, C, depth: (A[2] + B[2] + C[2]) / 3, lam, t: zt((pts[a].z + pts[b].z + pts[c].z) / 3) };
+  }).sort((p, q) => p.depth - q.depth);
+  for (const it of items) {
+    const col = tint(it.t).map(v => Math.round(v * (0.45 + 0.75 * it.lam)));
+    ctx.fillStyle = 'rgb(' + col.map(v => Math.min(255, v)) + ')'; ctx.strokeStyle = 'rgba(0,0,0,0.18)'; ctx.lineWidth = 0.5;
+    ctx.beginPath(); ctx.moveTo(it.A[0], it.A[1]); ctx.lineTo(it.B[0], it.B[1]); ctx.lineTo(it.C[0], it.C[1]); ctx.closePath(); ctx.fill(); ctx.stroke();
+  }
+  if ($('cCont').checked) {
+    ctx.lineWidth = 1;
+    for (const c of S.contours) { ctx.strokeStyle = c.major ? css('--major') : 'rgba(80,50,20,0.5)'; ctx.beginPath(); c.line.forEach((q, i) => { const s = P3(q[0], q[1], c.z, w, h); i ? ctx.lineTo(s[0], s[1]) : ctx.moveTo(s[0], s[1]); }); ctx.stroke(); }
+  }
+  if ($('cPts').checked) for (const p of pts) { const s = P3(p.x, p.y, p.z, w, h); ctx.fillStyle = css('--pt'); ctx.beginPath(); ctx.arc(s[0], s[1], 2.5, 0, 7); ctx.fill(); }
+  ctx.fillStyle = css('--dim'); ctx.font = '11px system-ui'; ctx.textAlign = 'left';
+  ctx.fillText('drag to rotate · wheel to zoom · vertical exaggeration x' + S.ex, 12, h - 66);
+}
+
+// ---------------------------------------------------------------- interaction
+function setMode(m) { S.mode = m; $('b2d').classList.toggle('on', m === '2d'); $('b3d').classList.toggle('on', m === '3d'); $('exl').style.display = m === '3d' ? '' : 'none'; draw(); }
+$('b2d').onclick = () => setMode('2d'); $('b3d').onclick = () => setMode('3d');
+for (const id of ['cTint', 'cCont', 'cTin', 'cPts', 'cLab']) $(id).onchange = draw;
+$('sInt').onchange = () => { recontour(); stats(); draw(); };
+$('rEx').oninput = e => { S.ex = parseFloat(e.target.value); draw(); };
+$('bFit').onclick = fit;
+$('bPng').onclick = () => { const a = document.createElement('a'); a.download = (S.title || 'map').replace(/\W+/g, '-') + '.png'; a.href = cv.toDataURL('image/png'); a.click(); };
+window.onresize = draw;
+
+let drag = null, pinch = null;
+cv.onpointerdown = e => { cv.setPointerCapture(e.pointerId); drag = { x: e.clientX, y: e.clientY }; cv.style.cursor = 'grabbing'; };
+cv.onpointerup = () => { drag = null; cv.style.cursor = 'grab'; };
+cv.onpointermove = e => {
+  const r = cv.getBoundingClientRect();
+  if (drag && !pinch) {
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag = { x: e.clientX, y: e.clientY };
+    if (S.mode === '2d') { S.cx -= dx / S.sc; S.cy += dy / S.sc; }
+    else { S.yaw += dx * 0.008; S.pitch = Math.min(1.5, Math.max(0.1, S.pitch + dy * 0.006)); }
+    draw();
+  } else if (S.mode === '2d') hover(e.clientX - r.left, e.clientY - r.top, r);
+};
+cv.onwheel = e => { e.preventDefault(); S.sc *= Math.exp(-e.deltaY * 0.0015); draw(); };
+function hover(mx, my, r) {
+  let best = -1, bd = 12;
+  S.pts.forEach((p, i) => { const s = P2(p.x, p.y, r.width, r.height), d = Math.hypot(s[0] - mx, s[1] - my); if (d < bd) { bd = d; best = i; } });
+  const tip = $('tip');
+  if (best !== S.hover) { S.hover = best; draw(); }
+  if (best < 0) { tip.style.display = 'none'; return; }
+  const p = S.pts[best];
+  tip.textContent = 'Point ' + p.id + (p.code ? '  ·  ' + p.code : '') + '\n' + p.z.toFixed(3) + ' m  ·  ' + p.fix + '\n±' + (p.hacc != null ? (p.hacc * 100).toFixed(1) + ' cm H / ' + (p.vacc * 100).toFixed(1) + ' cm V' : 'n/a') + '\n' + p.time;
+  tip.style.display = 'block'; tip.style.left = Math.min(mx + 14, r.width - 190) + 'px'; tip.style.top = Math.max(my - 10, 4) + 'px';
+}
+cv.ontouchstart = e => { if (e.touches.length === 2) pinch = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); };
+cv.ontouchmove = e => { if (e.touches.length === 2 && pinch) { const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); S.sc *= d / pinch; pinch = d; draw(); } };
+cv.ontouchend = () => { pinch = null; };
+
+// ---------------------------------------------------------------- start
+function applyHash() {
+  const h = new URLSearchParams(location.hash.slice(1));
+  if (h.has('3d')) setMode('3d');
+  if (h.has('yaw')) S.yaw = parseFloat(h.get('yaw'));
+  if (h.has('pitch')) S.pitch = parseFloat(h.get('pitch'));
+  if (h.has('ex')) { S.ex = parseFloat(h.get('ex')); $('rEx').value = S.ex; }
+  if (h.has('notin')) $('cTint').checked = false;
+}
+async function start() {
+  const q = new URLSearchParams(location.search), job = q.get('job');
+  let gj = window.RTK_DATA;
+  S.title = job || (gj && gj.title) || 'current job';
+  $('title').textContent = (gj && gj.title) || ('RTK map · ' + S.title);
+  document.title = $('title').textContent;
+  if (!gj) {
+    try { gj = await (await fetch(job ? '/jobs/' + encodeURIComponent(job) + '.geojson' : '/points.geojson', { cache: 'no-store' })).json(); }
+    catch (e) { msg('Could not load points: ' + e); return; }
+  }
+  applyHash(); load(gj);
+}
+if (typeof document !== 'undefined' && document.getElementById('cv')) start();
+</script>
+</body>
+</html>

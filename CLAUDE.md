@@ -19,6 +19,7 @@ scripts/gnss-tap.sh rtk1|rtk2 [secs]     # raw receiver capture (stops rtkd, res
 scripts/provision.sh rtk1|rtk2           # once per unit
 scripts/e2e-sim.sh                       # full system on this machine with simulated receivers
 python3 -m unittest tools/test_topo.py
+node tools/test_viewer.js
 ```
 
 Zig 0.16 at `/home/hotschmoe/tools/zig-aarch64-linux-0.16.0/zig` (or `$ZIG`). Build target for the Pis is
@@ -40,7 +41,8 @@ One thread, one epoll loop (`app.zig`); no libc, no std.Io: raw syscalls through
 * `net.zig` `ntrip.zig`: caster (base), UDP beacon discovery, rover link with backoff. Pure protocol in ntrip.zig.
 * `survey.zig` `geo.zig` `basepos.zig`: point occupation (gated epoch averaging), CSV/job file, stored base position.
 * `ui.zig` `fb.zig` `oled.zig` `input.zig` `gpio.zig`: pure screens over a `View`, SH1106 over SPI, GPIO uAPI v2 keys.
-* `http.zig` `page.html`: status page, downloads, POST-only actions.
+* `http.zig` `page.html` `viewer.html`: status page, downloads, POST-only actions, and `/map` (plan + 3D viewer;
+  the same file is inlined with data by `tools/topo.py`; its geometry block is tested by `tools/test_viewer.js`).
 
 Zig idioms in use: comptime tables (CRC-24Q, config keys reflected over `Config`, NMEA/PQTM dispatch via
 `StaticStringMap`, command strings via `comptimePrint`), `inline for`, comptime size assertions on kernel ABI

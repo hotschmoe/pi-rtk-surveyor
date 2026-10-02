@@ -42,7 +42,7 @@ button.sec{background:transparent;color:var(--accent);border:1px solid var(--acc
     <button class="sec" onclick="act('code')">Next code</button>
     <span class="sub" id="actmsg"></span>
   </p>
-  <p><a href="/points.csv">Download current job (CSV)</a> &middot; <a href="/points.geojson">GeoJSON</a></p>
+  <p><a href="/map"><strong>Map &amp; 3D view</strong></a> &middot; <a href="/points.csv">Download current job (CSV)</a> &middot; <a href="/points.geojson">GeoJSON</a></p>
 </div>
 
 <div class="card hide" id="base">
@@ -123,7 +123,7 @@ async function files() {
   try {
     const j = await (await fetch('/files.json')).json();
     $('files').innerHTML =
-      j.jobs.map(n => `<li><a href="/jobs/${n}">${n}</a> &middot; <a href="/jobs/${n.replace('.csv', '.geojson')}">geojson</a></li>`).join('') +
+      j.jobs.map(n => `<li><a href="/jobs/${n}">${n}</a> &middot; <a href="/jobs/${n.replace('.csv', '.geojson')}">geojson</a> &middot; <a href="/map?job=${n.replace('.csv', '')}">map</a></li>`).join('') +
       j.raw.map(n => `<li><a href="/raw/${n}">${n}</a></li>`).join('') || '<li>none yet</li>';
   } catch (e) {}
 }

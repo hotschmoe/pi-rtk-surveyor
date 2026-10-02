@@ -92,5 +92,5 @@ From a phone: the web page has the same MARK / Accept / Cancel / Next-code butto
   Ellipsoid_H,Antenna_H,Base_ID`.
 * `raw/<name>-NNNNNN.bin`, the receiver byte stream as received, rotated (default
   8 MB x 6). On the base this is the reference data for post-processing in RTKLIB.
-* GeoJSON and downloads from the web page: `http://<unit>:8080/`.
-* `tools/topo.py` turns a job CSV into a topographic drawing (see `docs/field-guide.md`).
+* GeoJSON and downloads from the web page: `http://<unit>:8080/`; a live plan/3D map at `http://<unit>:8080/map`.
+* `tools/topo.py` turns a job CSV into PNG/PDF/SVG sheets, an interactive HTML viewer, DXF, OBJ, and the XYZ file for ArchiCAD (see `docs/field-guide.md`).

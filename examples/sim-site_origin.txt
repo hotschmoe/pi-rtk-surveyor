@@ -1,0 +1,4 @@
+Datum: WGS84 / UTM zone 29N
+Local origin (UTM metres): easting 665970.000, northing 5915360.000
+UTM = local + origin.  Elevation is orthometric (MSL) ground metres and is not shifted.
+Files *_local.* and *_xyz_local.txt use local coordinates; *.dxf (no _local) and *_xyz_utm.txt use UTM.

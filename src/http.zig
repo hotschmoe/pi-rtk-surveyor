@@ -173,6 +173,7 @@ pub const Server = struct {
         if (!std.mem.eql(u8, method, "GET")) return reply(c, "405 Method Not Allowed", "text/plain", "GET or POST only\n");
 
         if (std.mem.eql(u8, path, "/")) return reply(c, "200 OK", "text/html; charset=utf-8", page_html);
+        if (std.mem.eql(u8, path, "/map")) return reply(c, "200 OK", "text/html; charset=utf-8", viewer_html);
         if (std.mem.eql(u8, path, "/status.json")) {
             var b: [1536]u8 = undefined;
             return reply(c, "200 OK", "application/json", ctx.statusJson(&b));
@@ -264,6 +265,8 @@ fn appendFmt(out: []u8, n: usize, comptime fmt: []const u8, args: anytype) usize
 }
 
 const page_html = @embedFile("page.html");
+/// Plan + 3D viewer; reads /points.geojson (or /jobs/<name>.geojson for ?job=<name>) in the browser.
+const viewer_html = @embedFile("viewer.html");
 
 // ---- tests ---------------------------------------------------------------------------------------------
 
@@ -337,6 +340,12 @@ test "serves page, status, jobs and refuses everything else" {
     var n = try fetch(p, "GET / HTTP/1.0\r\n\r\n", &srv, &buf);
     try std.testing.expect(std.mem.startsWith(u8, buf[0..n], "HTTP/1.0 200 OK"));
     try std.testing.expect(std.mem.indexOf(u8, buf[0..n], "Pi RTK Surveyor") != null);
+
+    n = try fetch(p, "GET /map?job=JOB1 HTTP/1.0\r\n\r\n", &srv, &buf);
+    try std.testing.expect(std.mem.startsWith(u8, buf[0..n], "HTTP/1.0 200 OK"));
+    try std.testing.expect(std.mem.indexOf(u8, buf[0..n], "RTK map viewer") != null);
+    try std.testing.expect(std.mem.indexOf(u8, buf[0..n], "function delaunay") != null);
+    try std.testing.expect(std.mem.endsWith(u8, buf[0..n], "</html>\n"));
 
     n = try fetch(p, "GET /status.json HTTP/1.1\r\nHost: x\r\n\r\n", &srv, &buf);
     try std.testing.expect(std.mem.endsWith(u8, buf[0..n], "{\"role\":\"rover\",\"fix\":\"RTK FIX\"}"));

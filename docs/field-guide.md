@@ -111,15 +111,53 @@ centimetre-class regardless, because the base error is common to all of them.
 * `Elevation` is orthometric (MSL via the receiver's geoid model) of the ground;
   `Ellipsoid_H` is the ellipsoidal height of the ground.
 
-## After the survey
+## After the survey: looking at it, and getting it into ArchiCAD
+
+**On the unit, on site (phone or laptop on the same network):** open `http://<unit>:8080/map`
+(the status page has a "Map & 3D view" link, and each job in the file list has a "map" link). It draws
+the live job in your browser from the unit's own data, with no internet needed: a plan view with
+hypsometric tint, TIN contours (every 5th labelled), point numbers, elevations and codes, hover for a
+point's accuracy, fix type and time, a north arrow and scale bar; and a **3D** button for a shaded mesh you
+can drag to rotate (vertical exaggeration slider). "Save PNG" saves the current view.
+
+**At home, from a job CSV (the tool needs only Python with numpy and matplotlib):**
 
 ```sh
-tools/topo.py survey/JOB1.csv --title "Back field" --out back-field   # DXF + SVG + PNEZD
+tools/topo.py JOB1.csv --title "Back field" --out back-field
 ```
 
-See the script's `--help`. Outputs a CAD-importable DXF with layered points,
-labels, contours, a north arrow, scale bar and title block; an SVG preview; and
-a PNEZD CSV in UTM metres.
+| File | Use |
+|---|---|
+| `back-field.png` / `.pdf` / `.svg` | drafted A3 sheet: UTM grid, contours, north arrow, scale bar, title block with the survey's own accuracy statistics. The PDF is for printing or sharing. |
+| `back-field.html` | the same interactive plan + 3D viewer as a single file with the data inside: email it or open it offline. |
+| `back-field_xyz_local.txt` | **for ArchiCAD**: three columns X Y Z in metres, small local coordinates (see below) |
+| `back-field_xyz_utm.txt` | the same in UTM metres |
+| `back-field_local.dxf` / `.dxf` | layered CAD drawing with 3D contour polylines, points, numbers, elevations, codes and the TIN as 3D faces (layer `TIN_3D`); local-origin and UTM versions |
+| `back-field.obj` | the TIN surface as a mesh, local metres |
+| `back-field_pnezd.csv` | Point, Northing, Easting, Elevation, Description (Civil 3D style) |
+| `back-field_origin.txt` | the datum and the local origin, so local coordinates can be put back to UTM |
+
+Why a "local" version: UTM coordinates are six and seven digits (for example E 666350, N 5915230), which CAD and
+BIM software handles poorly far from the origin. The local files subtract a round origin (the south-west corner of
+the data, rounded down to 10 m; override with `--origin E,N`). Elevations are never shifted: they are orthometric
+(MSL) ground metres.
+
+**ArchiCAD (mesh from survey points):**
+
+1. Make sure the project is set to metres.
+2. Use ArchiCAD's *Place Mesh from Surveyors Data* command (in the versions I checked it is under
+   File > Interoperability; in some versions it is under Design) and choose `*_xyz_local.txt`. It reads a plain
+   text file of three X Y Z columns and builds a mesh with the Mesh tool. Choose where to place it, and whether
+   to put the lowest point or project zero at 0.
+3. Alternatively merge/open `*_local.dxf` and build the mesh from its 3D contour polylines or the `TIN_3D` faces.
+4. The OBJ is a third route if you prefer to bring in a ready mesh (check its orientation; OBJ files are often
+   Y-up, ArchiCAD is Z-up).
+
+Two honest caveats. **I could not run ArchiCAD here:** the file formats follow Graphisoft's documented XYZ
+import and standard DXF, but the exact menu names and options vary by ArchiCAD version, so test with a small
+job first. And a mesh made only from points joins neighbouring points into triangles: it does not know about
+walls, kerbs or building edges, so where you surveyed a sharp edge you will get odd slivers. Survey a line of
+points on each side of an edge, or edit those triangles in ArchiCAD.
 
 ## Known limitations
 

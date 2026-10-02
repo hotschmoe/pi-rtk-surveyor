@@ -99,8 +99,39 @@ class Tool(unittest.TestCase):
             w = csv.writer(f); w.writerow(hdr); w.writerows(rows)
         out = os.path.join(d, "map")
         topo.main([p, "--out", out, "--title", "Test"])
-        for ext in (".dxf", ".png", ".svg", "_pnezd.csv"):
+        for ext in (".dxf", "_local.dxf", ".png", ".pdf", ".svg", ".html", ".obj", "_xyz_local.txt", "_xyz_utm.txt", "_origin.txt", "_pnezd.csv"):
             self.assertTrue(os.path.getsize(out + ext) > 100, ext)
+        with open(out + "_xyz_local.txt") as fh:
+            xyz = [list(map(float, l.split())) for l in fh if l.strip()]
+        with open(out + "_xyz_utm.txt") as fh:
+            utmxyz = [list(map(float, l.split())) for l in fh if l.strip()]
+        self.assertEqual(len(xyz), 25)
+        self.assertTrue(all(0 <= r[0] < 200 and 0 <= r[1] < 200 for r in xyz), "local coordinates must be small")
+        self.assertTrue(all(r[0] > 100000 for r in utmxyz), "UTM easting is large")
+        ox = utmxyz[0][0] - xyz[0][0]
+        self.assertLess(abs(ox / 10 - round(ox / 10)), 1e-6)  # origin is a multiple of 10 m
+        for a_, b_ in zip(xyz, utmxyz):
+            self.assertAlmostEqual(b_[0] - a_[0], ox, places=2)
+            self.assertAlmostEqual(a_[2], b_[2], places=3)  # elevation is not shifted
+        with open(out + ".obj") as fh:
+            obj = fh.read().splitlines()
+        nv = sum(1 for l in obj if l.startswith("v "))
+        faces = [l.split() for l in obj if l.startswith("f ")]
+        self.assertEqual(nv, 25)
+        self.assertTrue(len(faces) >= 30)
+        self.assertTrue(all(1 <= int(i) <= nv for f_ in faces for i in f_[1:]))
+        with open(out + "_local.dxf") as fh:
+            ldxf = fh.read()
+        with open(out + ".dxf") as fh:
+            udxf = fh.read()
+        self.assertIn("3DFACE", udxf)
+        self.assertIn("TIN_3D", udxf)
+        self.assertIn("local origin", ldxf)
+        with open(out + ".html") as fh:
+            page = fh.read()
+        self.assertIn('"FeatureCollection"', page)
+        self.assertNotIn("window.RTK_DATA = null;/*INLINE_DATA*/", page)
+        self.assertEqual(open(out + ".pdf", "rb").read(5), b"%PDF-")
         with open(out + ".dxf") as fh:
             dxf = fh.read()
         self.assertIn("CONTOUR_MAJOR", dxf)

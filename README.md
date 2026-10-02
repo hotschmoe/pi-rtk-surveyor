@@ -29,7 +29,8 @@ concrete buildings, antennas a few metres apart) and the whole chain worked.
 | RTK fix, survey-in completion, point capture | **on hardware, outdoors:** rover went float to RTK FIX (5 mm estimated error, 29 satellites) through the real corrections link; the base survey-in completed and stored its position; two points marked on the same spot agreed to 9 mm horizontally and vertically. Absolute accuracy and open-field performance not yet measured |
 | Web status/downloads, phone MARK | tests + on hardware (status pages); MARK via the simulator |
 | Keypad power-off (K1+K3) | logic and unit files verified; **not triggered** on hardware |
-| Topo sheet (DXF, PNG/SVG, PNEZD) | unit tests, plus a full simulated site (`examples/`) |
+| Topo sheet and exports (PNG/PDF/SVG, DXF, ArchiCAD XYZ, OBJ, PNEZD, interactive HTML) | unit tests, plus a full simulated site (`examples/`); the in-browser viewer is tested with Node (geometry) and headless Chromium (rendering). **ArchiCAD import itself not tested** (no ArchiCAD here) |
+| Live map at `/map` on the unit | served by `rtkd` and tested; **not yet deployed to the units** |
 
 Run the whole simulated system with `scripts/e2e-sim.sh` (38 checks: survey-in,
 discovery, RTK via the real corrections path, three marked points to a few mm,
@@ -74,6 +75,7 @@ placeholder North Pole position until it has surveyed in.
 ```
 src/            rtkd (Zig): nmea rtcm demux geo lc29h ntrip net survey ui fb oled input gpio
                 uart sys config rawlog basepos sysinfo http app, plus fixtures/ from real captures
+                and viewer.html (the plan + 3D map, served at /map and exported by topo.py)
 scripts/        build deploy logs gnss-tap provision add-wifi e2e-sim (+ gnss-cmd/probe for the Pi)
 deploy/         systemd units, per-unit configs
 tools/          gnss-sim (simulated LC29H), e2e_sim, sim_survey, topo (maps), genfont
@@ -96,6 +98,7 @@ panic and a 3-second systemd restart rather than silently wrong survey data.
 ```sh
 zig build test                 # 85 unit tests, host-native, uses real receiver captures
 python3 -m unittest tools/test_topo.py
+node tools/test_viewer.js      # geometry of the in-browser map: Delaunay TIN, contours
 scripts/e2e-sim.sh             # full base+rover system on this machine, no hardware
 tools/sim_survey.py            # survey a synthetic site through the real stack, then draw it
 ```
