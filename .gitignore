@@ -193,3 +193,4 @@ cython_debug/
 # Zig
 .zig-cache/
 zig-out/
+captures/

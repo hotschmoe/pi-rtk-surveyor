@@ -30,7 +30,7 @@ satellites is verified against a simulated receiver, not sky.
 | Keypad power-off (K1+K3) | logic and unit files verified; **not triggered** on hardware |
 | Topo sheet (DXF, PNG/SVG, PNEZD) | unit tests, plus a full simulated site (`examples/`) |
 
-Run the whole simulated system with `scripts/e2e-sim.sh` (about 40 checks: survey-in,
+Run the whole simulated system with `scripts/e2e-sim.sh` (38 checks: survey-in,
 discovery, RTK via the real corrections path, three marked points to a few mm,
 corrections loss and recovery, restarts, web safety).
 
@@ -82,7 +82,7 @@ docs/           setup, workflow, field guide, hardware
 ## Development
 
 ```sh
-zig build test                 # ~90 unit tests, host-native, uses real receiver captures
+zig build test                 # 85 unit tests, host-native, uses real receiver captures
 python3 -m unittest tools/test_topo.py
 scripts/e2e-sim.sh             # full base+rover system on this machine, no hardware
 tools/sim_survey.py            # survey a synthetic site through the real stack, then draw it
