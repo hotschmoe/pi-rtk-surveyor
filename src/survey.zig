@@ -233,7 +233,7 @@ pub const Job = struct {
 
     pub fn open(dir: []const u8, name: []const u8) sys.Error!Job {
         try sys.mkdirAll(dir);
-        var path: [160]u8 = undefined;
+        var path: [320]u8 = undefined;
         const p = std.fmt.bufPrint(&path, "{s}/{s}.csv", .{ dir, name }) catch return error.InvalidArgument;
         var job = Job{ .fd = -1 };
         // Scan existing rows for the highest ID so numbering continues after a reboot.

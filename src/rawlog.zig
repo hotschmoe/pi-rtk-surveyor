@@ -12,7 +12,7 @@ pub const RawLog = struct {
     size: u64 = 0,
     rotate_bytes: u64,
     keep: u32,
-    dir: [96]u8 = undefined,
+    dir: [160]u8 = undefined,
     dir_len: usize = 0,
     prefix: [16]u8 = undefined,
     prefix_len: usize = 0,
@@ -35,7 +35,7 @@ pub const RawLog = struct {
     };
 
     pub fn open(dir: []const u8, prefix: []const u8, rotate_mb: u32, keep: u32) sys.Error!RawLog {
-        if (dir.len > 96 or prefix.len > 16) return error.InvalidArgument;
+        if (dir.len > 160 or prefix.len > 16) return error.InvalidArgument;
         try sys.mkdirAll(dir);
         var r = RawLog{ .rotate_bytes = @as(u64, rotate_mb) * 1024 * 1024, .keep = @max(keep, 1) };
         @memcpy(r.dir[0..dir.len], dir);
@@ -54,7 +54,7 @@ pub const RawLog = struct {
     }
 
     fn openCurrent(self: *RawLog) sys.Error!void {
-        var p: [160]u8 = undefined;
+        var p: [320]u8 = undefined;
         self.fd = try sys.open(self.path(&p, self.seq), .{ .ACCMODE = .WRONLY, .CREAT = true, .APPEND = true }, 0o644);
         self.size = 0;
         log.info("rawlog: writing {s}", .{self.path(&p, self.seq)});
@@ -97,7 +97,7 @@ pub const RawLog = struct {
         sys.close(self.fd);
         self.seq += 1;
         if (self.seq > self.keep) {
-            var p: [160]u8 = undefined;
+            var p: [320]u8 = undefined;
             sys.unlink(self.path(&p, self.seq - self.keep));
         }
         self.openCurrent() catch |e| {

@@ -237,7 +237,7 @@ pub const App = struct {
 
         self.openUart();
 
-        var dir: [128]u8 = undefined;
+        var dir: [320]u8 = undefined;
         const raw_dir = std.fmt.bufPrint(&dir, "{s}/raw", .{cfg.log_dir.get()}) catch "";
         if (rawlog.RawLog.open(raw_dir, cfg.name.get(), cfg.raw_rotate_mb, cfg.raw_keep)) |r| {
             self.raw = r;
@@ -290,7 +290,7 @@ pub const App = struct {
 
     fn setupBase(self: *App) !void {
         const cfg = self.cfg;
-        var pb: [128]u8 = undefined;
+        var pb: [320]u8 = undefined;
         const path = self.basePosPath(&pb);
         var s = lc29h.Setup{ .role = .base, .msm = cfg.rtcm_msm };
         s.base = .{ .survey = .{ .secs = cfg.survey_secs, .acc_m = cfg.survey_acc_m } };
@@ -316,7 +316,7 @@ pub const App = struct {
     }
 
     fn openJob(self: *App) void {
-        var pb: [128]u8 = undefined;
+        var pb: [320]u8 = undefined;
         var name: [16]u8 = undefined;
         const nm = std.fmt.bufPrint(&name, "JOB{d}", .{self.job_num}) catch "JOB1";
         const dir = std.fmt.bufPrint(&pb, "{s}/survey", .{self.cfg.log_dir.get()}) catch "";
@@ -338,7 +338,7 @@ pub const App = struct {
         };
         if (self.beacon_rx) |b| try self.ep.add(b.fd, K.beacon, sys.IN);
 
-        var pb: [128]u8 = undefined;
+        var pb: [320]u8 = undefined;
         var buf: [16]u8 = undefined;
         if (sys.readFile(self.jobPath(&pb, "job"), &buf)) |t| {
             self.job_num = std.fmt.parseInt(u32, std.mem.trim(u8, t, " \n"), 10) catch 1;
@@ -592,7 +592,7 @@ pub const App = struct {
         // Survey-in finished: keep the result so the next session reuses the same coordinates.
         if (!self.saved_survey and !self.from_store) {
             if (self.rx.svin) |s| if (s.state == 2) if (s.ecef) |e| {
-                var pb: [128]u8 = undefined;
+                var pb: [320]u8 = undefined;
                 const rec = basepos.Record{ .ecef = e, .acc_m = s.acc_m orelse 0, .when = self.unixNow() };
                 if (basepos.save(self.basePosPath(&pb), rec)) {
                     log.info("base: survey-in complete, position stored (acc {d:.2} m)", .{rec.acc_m});
@@ -646,16 +646,22 @@ pub const App = struct {
         return codeAt(self.cfg.codes.get(), self.code_idx);
     }
 
-    fn startOccupation(self: *App, now: u64) void {
-        const j = self.job orelse return self.setToast(" CANNOT MARK", "No job file.", "Is storage writable?", "", now + 4000);
-        self.occ.begin(&self.rx, now, j.next_id, self.code()) catch |e| {
-            switch (e) {
-                error.NoPosition => self.setToast(" CANNOT MARK", "NO POSITION YET", "Antenna needs sky.", "", now + 3000),
-                error.NeedFix => self.setToast(" CANNOT MARK", "NO RTK FIX", "Wait for RTK FIX.", "(float is refused)", now + 3000),
-            }
-            return;
+    /// Begin an occupation. Returns null on success, else a short reason.
+    fn tryMark(self: *App, now: u64) ?[]const u8 {
+        const j = self.job orelse return "no job file (is storage writable?)";
+        self.occ.begin(&self.rx, now, j.next_id, self.code()) catch |e| return switch (e) {
+            error.NoPosition => "no position yet",
+            error.NeedFix => "no RTK fix",
         };
         log.info("survey: occupying point {d} ({s})", .{ j.next_id, self.code() });
+        return null;
+    }
+
+    fn startOccupation(self: *App, now: u64) void {
+        const why = self.tryMark(now) orelse return;
+        if (std.mem.eql(u8, why, "no RTK fix")) return self.setToast(" CANNOT MARK", "NO RTK FIX", "Wait for RTK FIX.", "(float is refused)", now + 3000);
+        if (std.mem.eql(u8, why, "no position yet")) return self.setToast(" CANNOT MARK", "NO POSITION YET", "Antenna needs sky.", "", now + 3000);
+        self.setToast(" CANNOT MARK", "No job file.", "Is storage writable?", "", now + 4000);
     }
 
     fn finishOccupation(self: *App, now: u64) void {
@@ -686,7 +692,7 @@ pub const App = struct {
 
     fn newJob(self: *App, now: u64) void {
         self.job_num += 1;
-        var pb: [128]u8 = undefined;
+        var pb: [320]u8 = undefined;
         var nb: [16]u8 = undefined;
         sys.mkdirAll(std.fmt.bufPrint(&pb, "{s}/survey", .{self.cfg.log_dir.get()}) catch "") catch {};
         const s = std.fmt.bufPrint(&nb, "{d}\n", .{self.job_num}) catch "";
@@ -697,7 +703,7 @@ pub const App = struct {
     }
 
     fn resurvey(self: *App, now: u64) void {
-        var pb: [128]u8 = undefined;
+        var pb: [320]u8 = undefined;
         sys.unlink(self.basePosPath(&pb));
         self.stored = null;
         self.from_store = false;
@@ -838,7 +844,7 @@ pub const App = struct {
         const held_ms = now - self.combo_since_ms;
         if (held_ms >= 3000) {
             log.info("keypad: K1+K3 held, powering off", .{});
-            var pb: [128]u8 = undefined;
+            var pb: [320]u8 = undefined;
             const path = std.fmt.bufPrint(&pb, "{s}/poweroff", .{self.cfg.log_dir.get()}) catch return;
             sys.writeFileAtomic(path, "1\n") catch |e| {
                 log.err("cannot request power-off: {s}", .{@errorName(e)});
@@ -850,6 +856,41 @@ pub const App = struct {
             var tb: [32]u8 = undefined;
             self.setToast(" POWER OFF", std.fmt.bufPrint(&tb, "in {d} s...", .{(3000 - held_ms) / 1000 + 1}) catch "", "Release to cancel.", "", 0);
         }
+    }
+
+    /// POST /api/<name>: remote keypad for the rover. Returns a JSON reply.
+    pub fn webCommand(self: *App, name: []const u8, buf: []u8) []const u8 {
+        const now = sys.monotonicMs();
+        const fail = struct {
+            fn go(b: []u8, msg: []const u8) []const u8 {
+                return std.fmt.bufPrint(b, "{{\"ok\":false,\"msg\":\"{s}\"}}", .{msg}) catch "";
+            }
+        }.go;
+        if (self.role != .rover) return fail(buf, "rover only");
+        if (std.mem.eql(u8, name, "mark")) {
+            if (self.occ.phase == .occupying) {
+                if (!self.occ.canAcceptEarly()) return fail(buf, "occupation in progress, too few epochs to accept");
+                self.finishOccupation(now);
+                return std.fmt.bufPrint(buf, "{{\"ok\":true,\"msg\":\"accepted early\"}}", .{}) catch "";
+            }
+            if (self.tryMark(now)) |why| return fail(buf, why);
+            return std.fmt.bufPrint(buf, "{{\"ok\":true,\"msg\":\"occupying point {d}\"}}", .{self.occ.id}) catch "";
+        }
+        if (std.mem.eql(u8, name, "cancel")) {
+            if (self.occ.phase != .occupying) return fail(buf, "nothing to cancel");
+            self.occ.cancel();
+            return std.fmt.bufPrint(buf, "{{\"ok\":true,\"msg\":\"cancelled\"}}", .{}) catch "";
+        }
+        if (std.mem.eql(u8, name, "code")) {
+            self.code_idx = (self.code_idx + 1) % codeCount(self.cfg.codes.get());
+            return std.fmt.bufPrint(buf, "{{\"ok\":true,\"msg\":\"code {s}\"}}", .{self.code()}) catch "";
+        }
+        if (std.mem.eql(u8, name, "newjob")) {
+            if (self.occ.phase == .occupying) return fail(buf, "finish or cancel the occupation first");
+            self.newJob(now);
+            return std.fmt.bufPrint(buf, "{{\"ok\":true,\"msg\":\"JOB{d}\"}}", .{self.job_num}) catch "";
+        }
+        return fail(buf, "unknown command");
     }
 
     // ---- display ------------------------------------------------------------------------------------------------------------------

@@ -19,6 +19,8 @@ dl{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;margin:8px 0 0}
 dt{color:var(--dim)}dd{margin:0;font-variant-numeric:tabular-nums;text-align:right}
 a{color:var(--accent)}
 ul{margin:6px 0 0;padding-left:20px}
+button{font:inherit;font-weight:600;padding:10px 16px;border-radius:8px;border:0;background:var(--accent);color:#fff;margin:2px 4px 2px 0}
+button.sec{background:transparent;color:var(--accent);border:1px solid var(--accent)}
 .hide{display:none}
 </style>
 </head>
@@ -34,6 +36,12 @@ ul{margin:6px 0 0;padding-left:20px}
 
 <div class="card" id="rover">
   <dl id="roverdl"></dl>
+  <p>
+    <button id="mark" onclick="act('mark')">Mark point</button>
+    <button id="cancel" class="sec" onclick="act('cancel')">Cancel</button>
+    <button class="sec" onclick="act('code')">Next code</button>
+    <span class="sub" id="actmsg"></span>
+  </p>
   <p><a href="/points.csv">Download current job (CSV)</a> &middot; <a href="/points.geojson">GeoJSON</a></p>
 </div>
 
@@ -69,6 +77,7 @@ function render(s) {
     row('Elevation (MSL)', f(s.alt_msl, 3, ' m')) +
     row('Est. error H / V', f(s.hacc, 3, ' m') + ' / ' + f(s.vacc, 3, ' m'));
   const r = s.role === 'rover';
+  if (r) $('mark').textContent = s.survey.occupying ? 'Accept now' : 'Mark point';
   $('rover').className = 'card' + (r ? '' : ' hide');
   $('base').className = 'card' + (r ? ' hide' : '');
   if (r) {
@@ -99,6 +108,13 @@ function render(s) {
     row('Power', y.throttled == null ? '--' : (y.throttled & 1 ? 'LOW VOLTAGE NOW' : (y.throttled & 0x10000 ? 'low earlier' : 'ok')));
 }
 
+async function act(name) {
+  try {
+    const j = await (await fetch('/api/' + name, {method: 'POST'})).json();
+    $('actmsg').textContent = (j.ok ? '' : 'refused: ') + j.msg;
+  } catch (e) { $('actmsg').textContent = 'no connection to unit'; }
+  poll();
+}
 async function poll() {
   try { render(await (await fetch('/status.json', {cache: 'no-store'})).json()); }
   catch (e) { $('fixsub').textContent = 'no connection to unit'; }

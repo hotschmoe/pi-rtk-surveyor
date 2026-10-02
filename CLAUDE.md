@@ -1,107 +1,63 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code (claude.ai/code) in this repository.
 
-## Project Overview
+## What this is
 
-This is a Pi RTK Surveyor project that creates a professional-grade RTK surveying station using a Raspberry Pi. The system provides centimeter-level GPS accuracy for property mapping and topographical surveying at a fraction of the cost of commercial solutions.
+Pi RTK Surveyor: two Raspberry Pi Zero 2 W units (a base and a rover), each with a Waveshare LC29H
+GPS/RTK HAT and a Waveshare 1.3" OLED HAT, doing RTK surveying. The Python prototype was replaced
+by a Zig daemon, `rtkd` (rewrite branch `rewrite/zig-rtkd`). See README.md first, then docs/.
 
-## Architecture
+## Commands
 
-The codebase uses a modular architecture centered around a bootloader pattern:
-
-### Core Components
-- **main.py**: Bootloader that handles hardware initialization and mode selection (BASE or ROVER)
-- **hardware/**: Hardware abstraction layer for GPIO, OLED display, buttons, and system monitoring
-- **rtk_base/**: Base station specific functionality
-- **rtk_rover/**: Rover specific functionality  
-- **common/**: Shared utilities including GPS controller, NMEA parsing, data logging, and communication protocols
-- **web/**: Web interface for remote monitoring
-
-### Key Architecture Patterns
-- Hardware components are initialized once in the bootloader and passed to the selected mode
-- GPIO management is centralized through gpio_manager.py
-- Display management uses luma.oled with custom screens and UI elements
-- System runs as a systemd service with proper resource limits and security settings
-
-## Development Commands
-
-### Installation and Setup
-```bash
-# Initial setup (run as regular user, not root)
-./setup.sh
-
-# Enable SPI/I2C interfaces after setup
-sudo raspi-config
-# Interface Options > SPI > Enable
-# Interface Options > I2C > Enable
+```sh
+zig build test                           # unit tests, host-native (the dev box is aarch64 too)
+scripts/build.sh [test]                  # static aarch64-linux-musl binary -> zig-out/bin/rtkd
+scripts/deploy.sh rtk1|rtk2|all [--config]
+scripts/logs.sh rtk1|rtk2
+scripts/gnss-tap.sh rtk1|rtk2 [secs]     # raw receiver capture (stops rtkd, restarts it)
+scripts/provision.sh rtk1|rtk2           # once per unit
+scripts/e2e-sim.sh                       # full system on this machine with simulated receivers
+python3 -m unittest tools/test_topo.py
 ```
 
-### Running the Application
-```bash
-# Start manually
-./start.sh
+Zig 0.16 at `/home/hotschmoe/tools/zig-aarch64-linux-0.16.0/zig` (or `$ZIG`). Build target for the Pis is
+`aarch64-linux-musl`. `rtkd selftest`, `rtkd screens`, `rtkd check` are subcommands.
 
-# Service management
-./service.sh start|stop|restart|status|logs|enable|disable
+## Access
 
-# Run with specific log level
-python3 src/main.py --log-level DEBUG
-```
+`ssh rtk1w` / `ssh rtk2w` (Wi-Fi, mDNS rtk1.local / rtk2.local), `ssh rtk1` / `ssh rtk2` (USB gadget,
+when the cable is data-capable). rtk1 = rover (LC29H DA), rtk2 = base (LC29H BS). The service is `rtkd`.
 
-### Python Environment
-- Uses virtual environment at `./venv/`
-- Dependencies managed via `requirements.txt`
-- All Python commands should use `./venv/bin/python`
+## Architecture (src/)
 
-### Testing and Development
-```bash
-# View live logs
-./service.sh logs
+One thread, one epoll loop (`app.zig`); no libc, no std.Io: raw syscalls through `sys.zig`.
 
-# Check system status
-./service.sh status
+* `nmea.zig` `rtcm.zig` `demux.zig`: pure framing, checksums, CRC24Q, resync. Tested on `src/fixtures/*.raw`
+  (real captures; marked binary in .gitattributes).
+* `lc29h.zig`: receiver bring-up as a pure state machine, idempotent read-compare-write. Do not make it
+  write unconditionally: rewriting the base's survey-in config restarts the survey.
+* `net.zig` `ntrip.zig`: caster (base), UDP beacon discovery, rover link with backoff. Pure protocol in ntrip.zig.
+* `survey.zig` `geo.zig` `basepos.zig`: point occupation (gated epoch averaging), CSV/job file, stored base position.
+* `ui.zig` `fb.zig` `oled.zig` `input.zig` `gpio.zig`: pure screens over a `View`, SH1106 over SPI, GPIO uAPI v2 keys.
+* `http.zig` `page.html`: status page, downloads, POST-only actions.
 
-# Manual testing (stop service first)
-./service.sh stop
-python3 src/main.py --log-level DEBUG
-```
+Rules that matter: only CRC-valid RTCM frames are forwarded to a receiver; the UI never swallows a key
+press; a point is fsynced before the screen says SAVED; accuracy is never reported better than the measured
+scatter; log lines go through `log.zig` (journald priority prefixes); tests keep logging quiet.
 
-## Hardware Dependencies
+## Hardware facts (verified, docs/hardware.md)
 
-This project is designed for real hardware testing only - no simulation modes:
-- Raspberry Pi Zero W 2 (or any Pi with GPIO)
-- LC29H GNSS RTK HAT for GPS functionality
-- Waveshare 1.3" OLED HAT for display and button controls
-- Requires SPI and I2C interfaces enabled
+* UART `/dev/serial0` 115200. Base HAT must be LC29H(BS); DA cannot be a base. DA has no GST (use PQTMEPE).
+* LC29H HAT: PPS = GPIO18, WAKEUP = GPIO4, WI/RES = GPIO27, no reset GPIO. OLED HAT: SPI0 CE0, DC=24, RST=25,
+  keys 21/20/16, joystick 6/19/5/26/13 (BCM numbers).
+* Before survey-in the BS broadcasts a placeholder 1005 position at the North Pole.
+* No fix is possible indoors; use `tools/gnss-sim.py` for anything that needs a position.
 
-### GPIO Pin Allocations
-- SPI for OLED display (pins 19, 23, 24 + GPIO 24, 25)
-- I2C for additional sensors
-- GPIO pins 21, 20, 16 for buttons (KEY1, KEY2, KEY3)
-- Joystick on GPIO pins 6, 19, 5, 26, 13
+## Conventions
 
-## Key Files to Understand
-
-- `src/main.py:89`: Main bootloader run loop
-- `src/hardware/gpio_manager.py`: Centralized GPIO pin management
-- `src/hardware/oled_manager.py`: Display management using luma.oled
-- `src/hardware/button_api.py`: Button event handling system
-- `src/common/lc29h_controller.py`: GPS module interface
-- `src/common/config/settings.py`: Configuration management
-
-## Data Storage
-
-- Logs: `data/logs/`
-- Survey data: `data/surveys/`
-- Configuration: `src/common/config/device_config.json`
-- System logs: `journalctl -u pi-rtk-surveyor`
-
-## Important Notes
-
-- Never run setup.sh as root - it handles sudo internally where needed
-- Hardware interfaces (SPI/I2C) must be enabled via raspi-config before first use
-- The system uses systemd for service management with security restrictions
-- All hardware operations require actual GPIO pins - this is not a simulation-friendly codebase
-- Button events are processed through a centralized ButtonAPI system
-- Display updates use the luma.oled library with custom screen implementations
+* Commit on the branch; do not push or open PRs without asking.
+* Never write to the dev box's own nvme0n1. A USB SD reader reports the same serial for every card: identify a
+  card by `/etc/hostname` on its root partition.
+* The Wi-Fi password lives only in the cards' NetworkManager profiles; never copy it into the repo.
+* Prefer editing the existing modules over adding new ones; keep functions pure where the hardware allows.

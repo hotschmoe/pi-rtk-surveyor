@@ -42,7 +42,7 @@ pub const Config = struct {
     name: Str(16) = Str(16).init("RTK"),
 
     // [gnss]
-    gnss_device: Str(64) = Str(64).init("/dev/serial0"),
+    gnss_device: Str(144) = Str(144).init("/dev/serial0"),
     baud: u32 = 115200,
 
     // [caster]  base: where to listen / rover: where to connect
@@ -71,7 +71,7 @@ pub const Config = struct {
     codes: Str(120) = Str(120).init("PT,COR,EP,FNC,BLD,TRE,UTL,PIN"),
 
     // [log]
-    log_dir: Str(64) = Str(64).init("/var/lib/rtk"),
+    log_dir: Str(144) = Str(144).init("/var/lib/rtk"),
     raw_rotate_mb: u32 = 8,
     raw_keep: u32 = 6,
 

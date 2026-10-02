@@ -98,8 +98,8 @@ pub const Server = struct {
         }
     }
 
-    /// `ctx` supplies live data: statusJson(buf) []const u8, logDir() []const u8,
-    /// currentJob() []const u8.
+    /// `ctx` supplies live data and actions: statusJson(buf), logDir(), currentJob(),
+    /// webCommand(name, buf).
     pub fn onClientEvent(self: *Server, slot: usize, events: u32, ctx: anytype) void {
         const c = &self.clients[slot];
         if (c.state == .free) return;
@@ -160,15 +160,21 @@ pub const Server = struct {
         var parts = std.mem.splitScalar(u8, c.req[0..line_end], ' ');
         const method = parts.next() orelse "";
         var path = parts.next() orelse "";
-        if (!std.mem.eql(u8, method, "GET")) return reply(c, "405 Method Not Allowed", "text/plain", "GET only\n");
         if (std.mem.indexOfScalar(u8, path, '?')) |q| path = path[0..q];
+        if (std.mem.eql(u8, method, "POST")) {
+            // Actions need POST so that a link prefetch or crawler can never mark a point.
+            if (!std.mem.startsWith(u8, path, "/api/") or !safeName(path[5..])) return notFound(c);
+            var b: [200]u8 = undefined;
+            return reply(c, "200 OK", "application/json", ctx.webCommand(path[5..], &b));
+        }
+        if (!std.mem.eql(u8, method, "GET")) return reply(c, "405 Method Not Allowed", "text/plain", "GET or POST only\n");
 
         if (std.mem.eql(u8, path, "/")) return reply(c, "200 OK", "text/html; charset=utf-8", page_html);
         if (std.mem.eql(u8, path, "/status.json")) {
             var b: [1536]u8 = undefined;
             return reply(c, "200 OK", "application/json", ctx.statusJson(&b));
         }
-        var pb: [200]u8 = undefined;
+        var pb: [360]u8 = undefined;
         if (std.mem.eql(u8, path, "/points.csv") or std.mem.eql(u8, path, "/points.geojson")) {
             const p = std.fmt.bufPrint(&pb, "{s}/survey/{s}.csv", .{ ctx.logDir(), ctx.currentJob() }) catch return notFound(c);
             return sendJob(c, p, std.mem.endsWith(u8, path, "geojson"));
@@ -223,7 +229,7 @@ pub const Server = struct {
     fn listFiles(c: *Client, ctx: anytype) void {
         var jobs: Lister = .{};
         var raws: Lister = .{};
-        var pb: [160]u8 = undefined;
+        var pb: [200]u8 = undefined;
         sys.forEachEntry(std.fmt.bufPrint(&pb, "{s}/survey", .{ctx.logDir()}) catch "", &jobs) catch {};
         sys.forEachEntry(std.fmt.bufPrint(&pb, "{s}/raw", .{ctx.logDir()}) catch "", &raws) catch {};
         var out: [4096]u8 = undefined;
@@ -279,6 +285,9 @@ const Ctx = struct {
     }
     pub fn currentJob(_: Ctx) []const u8 {
         return "JOB1";
+    }
+    pub fn webCommand(_: Ctx, name: []const u8, buf: []u8) []const u8 {
+        return std.fmt.bufPrint(buf, "{{\"ok\":true,\"msg\":\"{s}\"}}", .{name}) catch "";
     }
 };
 
@@ -348,7 +357,13 @@ test "serves page, status, jobs and refuses everything else" {
     try std.testing.expect(std.mem.startsWith(u8, buf[0..n], "HTTP/1.0 404"));
     n = try fetch(p, "GET /jobs/..%2f HTTP/1.0\r\n\r\n", &srv, &buf);
     try std.testing.expect(std.mem.startsWith(u8, buf[0..n], "HTTP/1.0 404"));
+    n = try fetch(p, "POST /api/mark HTTP/1.0\r\n\r\n", &srv, &buf);
+    try std.testing.expect(std.mem.endsWith(u8, buf[0..n], "{\"ok\":true,\"msg\":\"mark\"}"));
+    n = try fetch(p, "GET /api/mark HTTP/1.0\r\n\r\n", &srv, &buf); // GET must never act
+    try std.testing.expect(std.mem.startsWith(u8, buf[0..n], "HTTP/1.0 404"));
     n = try fetch(p, "POST / HTTP/1.0\r\n\r\n", &srv, &buf);
+    try std.testing.expect(std.mem.startsWith(u8, buf[0..n], "HTTP/1.0 404"));
+    n = try fetch(p, "DELETE / HTTP/1.0\r\n\r\n", &srv, &buf);
     try std.testing.expect(std.mem.startsWith(u8, buf[0..n], "HTTP/1.0 405"));
     n = try fetch(p, "GET /nothing HTTP/1.0\r\n\r\n", &srv, &buf);
     try std.testing.expect(std.mem.startsWith(u8, buf[0..n], "HTTP/1.0 404"));
