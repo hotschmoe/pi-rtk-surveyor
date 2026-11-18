@@ -1,13 +1,3 @@
-//! LC29H receiver bring-up as a pure state machine.
-//!
-//! The driver never touches a file descriptor: `tick` and `onNmea` are told
-//! the time and the sentences that arrived, and write commands through
-//! `out.send(body)`. That keeps it testable against a simulated receiver.
-//!
-//! Configuration is idempotent: every setting is read first and written only
-//! if it differs. This matters on the base, where rewriting the survey-in
-//! configuration restarts the survey.
-
 const std = @import("std");
 const config = @import("config.zig");
 const Str = config.Str;
@@ -16,11 +6,9 @@ const geo = @import("geo.zig");
 pub const Variant = enum { unknown, base_bs, rover_da, other };
 
 pub const State = enum {
-    /// Waiting for the receiver to answer PQTMVERNO.
     probing,
     configuring,
     running,
-    /// Wrong hardware for the configured role; will not proceed.
     failed,
 };
 
@@ -33,8 +21,6 @@ pub const Setup = struct {
     role: config.Role,
     base: BaseSetup = .{ .survey = .{ .secs = 900, .acc_m = 3.0 } },
     msm: u8 = 7,
-    /// Write the survey-in configuration even if it already matches, which
-    /// restarts the survey (used when the operator asks to resurvey).
     force_survey: bool = false,
 };
 
@@ -43,14 +29,10 @@ const max_tries = 3;
 const probe_period_ms = 1000;
 
 const Step = struct {
-    /// Query to send, or empty for write-only steps.
     query: Str(48) = .{},
-    /// Sentence-body prefix that carries the query reply, e.g. "PQTMCFGSVIN,".
     head: Str(24) = .{},
-    /// Expected remainder after `head` if the setting is already right.
     expect: Str(64) = .{},
     write: Str(96) = .{},
-    /// Short name for logs.
     label: Str(20) = .{},
 };
 
@@ -70,7 +52,6 @@ pub const Driver = struct {
     sent_ms: u64 = 0,
     tries: u8 = 0,
     last_probe_ms: u64 = 0,
-    /// How many steps ended without confirmation, for the status screen.
     failed_steps: u8 = 0,
     writes_sent: u32 = 0,
 
@@ -93,8 +74,6 @@ pub const Driver = struct {
         self.n_steps = 0;
         var b1: [64]u8 = undefined;
         var b2: [96]u8 = undefined;
-        // NMEA: what the UI uses. GLL and VTG are redundant load on a 115200 link.
-        // The command strings are built at compile time.
         inline for (.{
             .{ "nmea gga", 0, 1 },
             .{ "nmea gll", 1, 0 },
@@ -150,7 +129,6 @@ pub const Driver = struct {
         }
     }
 
-    /// Call at least every 100 ms.
     pub fn tick(self: *Driver, now_ms: u64, out: anytype) void {
         switch (self.state) {
             .probing => {
@@ -203,7 +181,6 @@ pub const Driver = struct {
         return .unknown;
     }
 
-    /// Feed every checksum-valid sentence body from the receiver.
     pub fn onNmea(self: *Driver, body: []const u8, now_ms: u64, out: anytype) void {
         switch (self.state) {
             .probing => {
@@ -259,7 +236,6 @@ pub const Driver = struct {
             }
             return;
         }
-        // write phase: PQTM "NAME,OK" / "NAME,ERROR,n"; PAIR "PAIR001,<type>,<result>"
         const w = s.write.get();
         if (std.mem.startsWith(u8, w, "PAIR")) {
             if (!std.mem.startsWith(u8, body, "PAIR001,")) return;
@@ -291,5 +267,3 @@ pub const Driver = struct {
         return self.steps[self.idx].label.get();
     }
 };
-
-// ---- simulated receiver for tests --------------------------------------------------------

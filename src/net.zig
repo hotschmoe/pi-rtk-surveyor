@@ -1,7 +1,3 @@
-//! Sockets for the corrections link: the base's NTRIP caster and discovery
-//! beacon, and the rover's NTRIP client. Everything is non-blocking and driven
-//! from the main epoll loop; nothing here sleeps or spawns threads.
-
 const std = @import("std");
 const linux = std.os.linux;
 const sys = @import("sys.zig");
@@ -70,7 +66,6 @@ fn tcpConnect(ip: Ip4, port: u16) sys.Error!sys.Fd {
     return fd;
 }
 
-/// After EPOLLOUT on a connecting socket: did it work?
 fn connectResult(fd: sys.Fd) sys.Error!void {
     var err: i32 = 0;
     var len: linux.socklen_t = @sizeOf(i32);
@@ -100,8 +95,6 @@ fn udpSocket(bind_port: ?u16, broadcast: bool) sys.Error!sys.Fd {
     }
     return fd;
 }
-
-// ---- discovery beacon -----------------------------------------------------------------------
 
 pub const BeaconInfo = struct {
     ip: Ip4,
@@ -179,14 +172,9 @@ pub const BeaconRx = struct {
     }
 };
 
-// ---- caster (base) --------------------------------------------------------------------------------
-
 pub const max_clients = 8;
 const out_cap = 16 * 1024;
 
-/// Per-client send queues live in zero-initialised globals, not inside the client records:
-/// a default-initialised struct containing them would be emitted as a constant in the binary
-/// and copied into place at start-up.
 var caster_out: [max_clients][out_cap]u8 = undefined;
 
 const ClientState = enum { free, request, stream };
@@ -208,7 +196,6 @@ pub const Caster = struct {
     client_tag_base: u64,
     cfg: *const config.Config,
     clients: [max_clients]CasterClient = @as([max_clients]CasterClient, @splat(.{})),
-    /// Where the base is, for the sourcetable. Updated by the app.
     lat: f64 = 0,
     lon: f64 = 0,
 
@@ -343,11 +330,9 @@ pub const Caster = struct {
             std.mem.copyForwards(u8, c.out[0 .. c.out_len - n], c.out[n..c.out_len]);
             c.out_len -= n;
         }
-        // Queue empty: stop asking for writability.
         self.ep.mod(c.fd, self.client_tag_base + slot, sys.IN | linux.EPOLL.RDHUP) catch {};
     }
 
-    /// Send one CRC-valid RTCM frame to every streaming client.
     pub fn broadcast(self: *Caster, frame: []const u8) void {
         self.frames_out += 1;
         for (&self.clients, 0..) |*c, slot| {
@@ -369,7 +354,6 @@ pub const Caster = struct {
 
     fn enqueue(self: *Caster, c: *CasterClient, slot: usize, data: []const u8) void {
         if (c.out_len + data.len > out_cap) {
-            // A client this far behind only wants stale corrections. Cut it loose; it will reconnect.
             self.dropped_slow += 1;
             return self.drop(c, "too slow");
         }
@@ -379,17 +363,12 @@ pub const Caster = struct {
     }
 };
 
-// ---- link client (rover) ---------------------------------------------------------------------------
-
 pub const LinkState = enum {
-    /// host = auto and no beacon heard yet.
     searching,
     connecting,
-    /// Request sent, waiting for the reply header.
     handshaking,
     streaming,
     backoff,
-    /// Configuration cannot work (e.g. unparsable host).
     misconfigured,
 };
 
@@ -453,8 +432,6 @@ pub const Link = struct {
         self.enter(.backoff, now_ms);
     }
 
-    /// Send one NMEA sentence upstream (the rover's GGA, for VRS casters and for
-    /// the base to see who is connected). Silently ignored unless streaming.
     pub fn sendLine(self: *Link, body: []const u8) void {
         if (self.state != .streaming or self.fd < 0) return;
         var buf: [160]u8 = undefined;
@@ -462,7 +439,6 @@ pub const Link = struct {
         _ = send(self.fd, f) catch {};
     }
 
-    /// Housekeeping, at least every 100 ms.
     pub fn tick(self: *Link, now_ms: u64, beacon: ?BeaconInfo) void {
         switch (self.state) {
             .misconfigured => {},
@@ -510,7 +486,6 @@ pub const Link = struct {
         self.enter(.connecting, now_ms);
     }
 
-    /// `sink.onRtcm(frame)` receives each CRC-valid correction frame.
     pub fn onSocket(self: *Link, events: u32, now_ms: u64, sink: anytype) void {
         if (self.fd < 0) return;
         if (self.state == .connecting and events & (sys.OUT | sys.ERR | sys.HUP) != 0) {
@@ -557,7 +532,6 @@ pub const Link = struct {
     }
 };
 
-/// Receives RTCM frames from the demux and hands them to the application.
 fn Forward(comptime S: type) type {
     return struct {
         link: *Link,
@@ -573,8 +547,6 @@ fn Forward(comptime S: type) type {
     };
 }
 
-/// Body bytes from the NTRIP reply parser go through the RTCM framer, so only
-/// CRC-valid frames ever reach the receiver, whatever the caster sent around them.
 fn Pipe(comptime S: type) type {
     return struct {
         fwd: Forward(S),

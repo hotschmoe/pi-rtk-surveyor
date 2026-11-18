@@ -84,3 +84,28 @@ columns retain the original schema. A point must reach flash before the UI repor
 
 Conversions use the proleptic Gregorian calendar and UTC. The Pi has no RTC, so point timestamps
 prefer GNSS time over the system clock. The civil-day conversion follows Howard Hinnant's algorithm.
+
+## src/app.zig
+
+The daemon runs one epoll loop. Receiver-bound queues drop whole frames that do not fit; they never
+send partial frames. A missing display or keys degrades operation instead of stopping the daemon.
+The wake key only wakes the panel; a toast is dismissed without consuming a subsequent key action.
+The rover sends GGA upstream for VRS casters and for base-side identification.
+
+## src/http.zig
+
+The server is intended for a private survey network and has no authentication; set `ui.http_port`
+to zero to disable it. State-changing actions require POST to prevent link prefetch from marking a
+point. Embedded pages and headers must fit the shared response buffer.
+
+## src/lc29h.zig
+
+Receiver settings are read before they are written. Rewriting the base survey-in setting restarts
+the survey, so it must only be forced when the operator requests a new survey. The driver needs
+regular ticks, at least every 100 ms. GLL and VTG are redundant load on the 115200 baud link.
+
+## src/net.zig
+
+Caster send buffers are separate zero-initialised globals because embedding large default-initialised
+arrays in client records would emit and copy the data in the binary. A client too far behind is
+disconnected rather than fed stale corrections. Only CRC-valid RTCM reaches the receiver.

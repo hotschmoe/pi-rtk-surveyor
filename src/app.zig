@@ -1,11 +1,3 @@
-//! The daemon: one epoll loop, no threads.
-//!
-//! The UART is the heart. Everything the receiver says arrives here, is
-//! split into NMEA and RTCM3, and fans out: NMEA into the receiver model and
-//! driver, RTCM (on the base) to every rover through the caster. On the rover
-//! the flow reverses: corrections arrive from the link and are written to the
-//! receiver. The OLED and keys are serviced from the same loop.
-
 const std = @import("std");
 const linux = std.os.linux;
 const sys = @import("sys.zig");
@@ -52,10 +44,6 @@ const rx_silent_ms = 5000;
 const stats_ms = 30_000;
 const chip = "/dev/gpiochip0";
 
-// ---- small helpers (unit-tested below) -------------------------------------------------------------------
-
-/// Bytes queued for the receiver. Whole frames only: a frame that does not
-/// fit is dropped and counted, never truncated.
 pub const TxQueue = struct {
     fd: sys.Fd = -1,
     buf: [4096]u8 = undefined,
@@ -104,7 +92,6 @@ pub const Rate = struct {
     }
 };
 
-/// The n-th comma-separated feature code (wraps around).
 pub fn codeAt(codes: []const u8, n: usize) []const u8 {
     var count: usize = 0;
     var it = std.mem.splitScalar(u8, codes, ',');
@@ -132,8 +119,6 @@ pub fn codeCount(codes: []const u8) usize {
     return @max(count, 1);
 }
 
-// ---- the application ------------------------------------------------------------------------------------------
-
 pub const App = struct {
     cfg: *const config.Config,
     role: config.Role,
@@ -142,7 +127,6 @@ pub const App = struct {
     sig_fd: sys.Fd = -1,
     running: bool = true,
 
-    // receiver
     uart_fd: sys.Fd = -1,
     uart_retry_ms: u64 = 0,
     tx: TxQueue = .{},
@@ -153,7 +137,6 @@ pub const App = struct {
     rx_bytes: u64 = 0,
     raw: ?rawlog.RawLog = null,
 
-    // user interface
     oled: ?oled_mod.Oled = null,
     oled_fail: u8 = 0,
     keys: ?input.Buttons = null,
@@ -168,7 +151,6 @@ pub const App = struct {
     info: sysinfo.Info = .{},
     last_info_ms: u64 = 0,
 
-    // base
     caster: ?net.Caster = null,
     beacon_tx: ?net.BeaconTx = null,
     stored: ?basepos.Record = null,
@@ -177,7 +159,6 @@ pub const App = struct {
     confirm_until_ms: u64 = 0,
     out_rate: Rate = .{},
 
-    // rover
     link: ?net.Link = null,
     beacon_rx: ?net.BeaconRx = null,
     occ: survey.Occupation,
@@ -194,7 +175,6 @@ pub const App = struct {
     last_stats_ms: u64 = 0,
     last_drv_state: lc29h.State = .probing,
 
-    // fix-state tracking, for the journal and the web status
     start_ms: u64 = 0,
     last_q: nmea.Quality = .none,
     q_since_ms: u64 = 0,
@@ -204,8 +184,6 @@ pub const App = struct {
     http: ?http.Server = null,
     combo_since_ms: u64 = 0,
     powering_off: bool = false,
-
-    // ---- construction -----------------------------------------------------------------------------------------
 
     pub fn init(cfg: *const config.Config) !App {
         const role = cfg.role.?;
@@ -223,8 +201,6 @@ pub const App = struct {
         };
     }
 
-    /// Open everything that can be opened. Hardware that is missing degrades the
-    /// unit (and is said so on screen and in the log) rather than killing it.
     pub fn setup(self: *App) !void {
         const cfg = self.cfg;
         log.info("rtkd {s} starting: role {s}, unit {s}", .{ version, @tagName(self.role), cfg.name.get() });
@@ -236,7 +212,6 @@ pub const App = struct {
         self.sig_fd = try sys.shutdownSignalFd();
         try self.ep.add(self.sig_fd, K.signal, sys.IN);
 
-        // Display first, so every later problem can be shown on it.
         if (oled_mod.Oled.open("/dev/spidev0.0", chip, cfg.rotate_180, cfg.contrast)) |o| {
             self.oled = o;
         } else |e| log.warn("OLED unavailable ({s}); running headless", .{@errorName(e)});
@@ -357,7 +332,6 @@ pub const App = struct {
     }
 
     pub fn deinit(self: *App) void {
-        // Leave the panel saying so, rather than frozen on stale numbers.
         if (self.powering_off) self.setToast(" POWERING OFF", "Wait 15 seconds,", "then unplug power.", "", 0) else self.setToast(" RTKD STOPPED", "Service stopped.", "Restart to resume.", "", 0);
         self.renderUi(sys.monotonicMs(), true);
         if (self.raw) |*r| r.close();
@@ -368,8 +342,6 @@ pub const App = struct {
         if (self.oled) |*o| o.close();
         if (self.keys) |k| k.close();
     }
-
-    // ---- main loop -----------------------------------------------------------------------------------------------
 
     pub fn run(self: *App) void {
         var evs: [16]sys.Event = undefined;
@@ -422,8 +394,6 @@ pub const App = struct {
         }
     }
 
-    // ---- receiver data ---------------------------------------------------------------------------------------------
-
     const UartSink = struct {
         app: *App,
         pub fn onNmea(s: *UartSink, body: []const u8) void {
@@ -466,7 +436,6 @@ pub const App = struct {
         }
     }
 
-    /// Write a command sentence to the receiver (used by the driver).
     pub fn send(self: *App, body: []const u8) void {
         var buf: [160]u8 = undefined;
         const f = nmea.frame(&buf, body) catch return;
@@ -491,8 +460,6 @@ pub const App = struct {
         if (self.role == .rover) self.occ.onEpoch(&self.rx, now);
     }
 
-    /// Once per GGA epoch: count the fix quality, and log every change of state with how long the
-    /// previous state lasted. A fix that flickers shows up in the journal instead of only on the screen.
     fn noteEpoch(self: *App, now: u64) void {
         const q = self.rx.quality;
         self.q_counts[@min(@backingInt(q), self.q_counts.len - 1)] += 1;
@@ -515,7 +482,6 @@ pub const App = struct {
         if (self.caster) |*c| c.broadcast(frame);
     }
 
-    /// Rover: a CRC-valid correction frame arrived from the base.
     fn forwardCorrection(self: *App, frame: []const u8) void {
         self.tx.push(frame);
         if (rtcm.decode1005(frame)) |st| {
@@ -536,8 +502,6 @@ pub const App = struct {
             if (slot) |s| self.base_seen.sats[s] = m.sats;
         }
     }
-
-    // ---- housekeeping ---------------------------------------------------------------------------------------------------
 
     fn tick(self: *App, now: u64) void {
         if (self.uart_fd < 0) {
@@ -599,7 +563,6 @@ pub const App = struct {
         }
     }
 
-    /// One summary line per 30 s: enough to see from the journal that data is flowing.
     fn logStats(self: *App) void {
         const st = self.dm.stats;
         log.info("gnss: {s} fix={s} sv={d}/{d} | rx {d} B nmea {d}/{d} bad rtcm {d}/{d} bad junk {d} | tx dropped {d}", .{
@@ -633,7 +596,6 @@ pub const App = struct {
 
         if (self.confirm_until_ms != 0 and now >= self.confirm_until_ms) self.confirm_until_ms = 0;
 
-        // Survey-in finished: keep the result so the next session reuses the same coordinates.
         if (!self.saved_survey and !self.from_store) {
             if (self.rx.svin) |s| if (s.state == 2) if (s.ecef) |e| {
                 var pb: [320]u8 = undefined;
@@ -671,7 +633,6 @@ pub const App = struct {
             const beacon: ?net.BeaconInfo = if (self.beacon_rx) |*b| b.current(now) else null;
             l.tick(now, beacon);
             self.in_rate.update(l.frames_in, now);
-            // Report our position upstream: needed by VRS casters, and lets the base log who is listening.
             if (l.state == .streaming and self.gga_len > 0 and now >= self.gga_sent_ms + gga_upstream_ms) {
                 self.gga_sent_ms = now;
                 l.sendLine(self.gga[0..self.gga_len]);
@@ -684,13 +645,10 @@ pub const App = struct {
         if (self.occ.complete()) self.finishOccupation(now);
     }
 
-    // ---- surveying -----------------------------------------------------------------------------------------------------------
-
     fn code(self: *App) []const u8 {
         return codeAt(self.cfg.codes.get(), self.code_idx);
     }
 
-    /// Begin an occupation. Returns null on success, else a short reason.
     fn tryMark(self: *App, now: u64) ?[]const u8 {
         const j = self.job orelse return "no job file (is storage writable?)";
         self.occ.begin(&self.rx, now, j.next_id, self.code()) catch |e| return switch (e) {
@@ -765,8 +723,6 @@ pub const App = struct {
         self.setToast(" RESURVEY", "Stored position", "discarded.", "Surveying in...", now + 2500);
     }
 
-    // ---- keys ------------------------------------------------------------------------------------------------------------------
-
     fn pollKeys(self: *App, now: u64) void {
         var k = &(self.keys orelse return);
         var edges: [8]input.Edge = undefined;
@@ -788,7 +744,6 @@ pub const App = struct {
             if (self.oled) |*o| o.valid = false;
             return; // the waking key does nothing else
         }
-        // A toast never eats a key press: it is dismissed and the key acts as usual.
         self.toast = null;
         const np = self.pages().len;
         const page = self.pages()[self.page_index];
@@ -817,8 +772,6 @@ pub const App = struct {
             },
         }
     }
-
-    // ---- web status provider ----------------------------------------------------------------------------------------
 
     pub fn logDir(self: *App) []const u8 {
         return self.cfg.log_dir.get();
@@ -873,7 +826,6 @@ pub const App = struct {
         return buf[0..n];
     }
 
-    /// K1 + K3 held together for 3 s: clean power-off (no pulling the plug on a card).
     fn checkPowerCombo(self: *App, now: u64) void {
         const k = &(self.keys orelse return);
         const held = k.deb.down[@backingInt(input.Button.key1)] and k.deb.down[@backingInt(input.Button.key3)];
@@ -902,7 +854,6 @@ pub const App = struct {
         }
     }
 
-    /// POST /api/<name>: remote keypad for the rover. Returns a JSON reply.
     pub fn webCommand(self: *App, name: []const u8, buf: []u8) []const u8 {
         const now = sys.monotonicMs();
         const fail = struct {
@@ -936,8 +887,6 @@ pub const App = struct {
         }
         return fail(buf, "unknown command");
     }
-
-    // ---- display ------------------------------------------------------------------------------------------------------------------
 
     fn setToast(self: *App, title: []const u8, l1: []const u8, l2: []const u8, l3: []const u8, until_ms: u64) void {
         const src = [4][]const u8{ title, l1, l2, l3 };
@@ -1027,7 +976,6 @@ pub const App = struct {
     fn renderUi(self: *App, now: u64, force: bool) void {
         const o = &(self.oled orelse return);
         if (!force and self.cfg.sleep_secs > 0 and now > self.last_input_ms + @as(u64, self.cfg.sleep_secs) * 1000) {
-            // Keep the panel alive while something needs attention.
             const attention = self.occ.phase == .occupying or self.drv.state == .failed or self.toast != null;
             if (!attention) {
                 if (!self.asleep) {
@@ -1053,5 +1001,3 @@ pub const App = struct {
         self.oled_fail = 0;
     }
 };
-
-// ---- tests ----------------------------------------------------------------------------------------------------------------

@@ -1,10 +1,3 @@
-//! Tiny HTTP/1.0 server for phones and laptops on the same network: live
-//! status, and downloads of the survey jobs and raw logs. Everything is
-//! embedded; there are no external assets (the field has no internet).
-//!
-//! Read-only, GET only, no authentication: it is meant for a private survey
-//! network. Set ui.http_port = 0 to turn it off.
-
 const std = @import("std");
 const linux = std.os.linux;
 const sys = @import("sys.zig");
@@ -17,7 +10,6 @@ const req_cap = 1024;
 const out_cap = 96 * 1024;
 const chunk = 16 * 1024;
 
-/// Response buffers live in a zero-initialised global rather than in the client records (see net.zig).
 var http_out: [max_clients][out_cap]u8 = undefined;
 
 const State = enum { free, reading, sending };
@@ -94,15 +86,12 @@ pub const Server = struct {
         c.state = .free;
     }
 
-    /// Drop connections that never finished a request.
     pub fn tick(self: *Server, now_ms: u64) void {
         for (&self.clients) |*c| {
             if (c.state != .free and now_ms > c.started_ms + 15_000) self.drop(c);
         }
     }
 
-    /// `ctx` supplies live data and actions: statusJson(buf), logDir(), currentJob(),
-    /// webCommand(name, buf).
     pub fn onClientEvent(self: *Server, slot: usize, events: u32, ctx: anytype) void {
         const c = &self.clients[slot];
         if (c.state == .free) return;
@@ -165,7 +154,6 @@ pub const Server = struct {
         var path = parts.next() orelse "";
         if (std.mem.indexOfScalar(u8, path, '?')) |q| path = path[0..q];
         if (std.mem.eql(u8, method, "POST")) {
-            // Actions need POST so that a link prefetch or crawler can never mark a point.
             if (!std.mem.startsWith(u8, path, "/api/") or !safeName(path[5..])) return notFound(c);
             var b: [200]u8 = undefined;
             return reply(c, "200 OK", "application/json", ctx.webCommand(path[5..], &b));
@@ -266,16 +254,10 @@ fn appendFmt(out: []u8, n: usize, comptime fmt: []const u8, args: anytype) usize
 }
 
 const page_html = @embedFile("page.html");
-/// Plan + 3D viewer; reads /points.geojson (or /jobs/<name>.geojson for ?job=<name>) in the browser.
 const viewer_html = @embedFile("viewer.html");
-/// The viewer's geometry core (Zig compiled to WebAssembly, built by `zig build wasm`, see src/geom).
-/// The Pi only serves these bytes; the browser does the triangulation.
 const viewer_wasm = @embedFile("map.wasm");
 
 comptime {
-    // Everything goes through reply(), whose buffer is out_cap including the headers.
     std.debug.assert(viewer_html.len < out_cap - 1024);
     std.debug.assert(viewer_wasm.len < out_cap - 1024);
 }
-
-// ---- tests ---------------------------------------------------------------------------------------------
