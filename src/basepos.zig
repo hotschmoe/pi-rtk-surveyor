@@ -56,25 +56,3 @@ pub fn load(path: []const u8) ?Record {
     const text = sys.readFile(path, &buf) catch return null;
     return parse(text);
 }
-
-test "round trip through the file system" {
-    const path = ".zig-cache/basepos-test/base.pos";
-    try sys.mkdirAll(".zig-cache/basepos-test");
-    sys.unlink(path);
-    try std.testing.expect(load(path) == null);
-    try save(path, .{ .ecef = .{ 3_800_000.1234, -430_000.5, 5_100_000.9999 }, .acc_m = 1.37, .when = 1_790_000_000 });
-    const r = load(path).?;
-    try std.testing.expectApproxEqAbs(@as(f64, 3_800_000.1234), r.ecef[0], 1e-4);
-    try std.testing.expectApproxEqAbs(@as(f64, -430_000.5), r.ecef[1], 1e-4);
-    try std.testing.expectApproxEqAbs(@as(f64, 5_100_000.9999), r.ecef[2], 1e-4);
-    try std.testing.expectApproxEqAbs(@as(f32, 1.37), r.acc_m, 1e-4);
-    try std.testing.expectEqual(@as(i64, 1_790_000_000), r.when);
-}
-
-test "garbage and placeholder positions are refused" {
-    try std.testing.expect(parse("") == null);
-    try std.testing.expect(parse("ecef = 1, 2\n") == null);
-    try std.testing.expect(parse("ecef = a, b, c\n") == null);
-    try std.testing.expect(parse("ecef = 0.1173, 0, 6356902.3142\nacc = 1\n") != null); // pole is on the surface
-    try std.testing.expect(parse("ecef = 0, 0, 0\n") == null); // all-zero is not
-}

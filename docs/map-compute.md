@@ -33,7 +33,7 @@ formula, which loses all precision on slivers.) Beyond 20,000 points the page sa
 ## Speed
 
 Desktop, Node 22 on the dev box (aarch64), TIN + contours every 0.5 m, survey-like random points
-(about 12 m spacing), median of 7 runs for wasm, JS timed once for 1,000+ points (`FULL=1 node tools/test_wasm.js` includes the 20,000-point JS run, about 30 s). JS is timed outside
+(about 12 m spacing), median of 7 runs for wasm, JS timed once for 1,000+ points. JS is timed outside
 `vm` (code inside a `vm` context runs about 8x slower and had made the old numbers look worse than a
 browser really is; in headless Chromium 154 the JS TIN of 1000 / 3000 points took 77 / 351 ms).
 
@@ -105,6 +105,5 @@ Revisit if jobs routinely exceed about 100,000 points, which a handheld RTK surv
 
 `src/map.wasm` is committed so the daemon build needs no extra step. After changing `src/geom/*.zig` run
 `scripts/build-wasm.sh` (it runs `zig fmt`, `zig build wasm`, and refreshes `src/map.wasm.sha256`) and
-commit both files. `node tools/test_wasm.js` fails with a clear message if the stamp does not match the
-sources. `zig build test` runs the geometry's native unit tests; `zig build wasm -Dwasm-optimize=ReleaseFast`
+commit both files. The stamp records the source hash; `scripts/test-heavy.sh` exercises offline exports. `zig build wasm -Dwasm-optimize=ReleaseFast`
 builds the faster variant.

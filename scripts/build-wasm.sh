@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Rebuild src/map.wasm (the map viewer's geometry core) from src/geom/*.zig and record which source it
-# came from. Commit both files. tools/test_wasm.js fails when the stamp no longer matches the sources.
+# came from. Commit both files.
 #   scripts/build-wasm.sh [zig build options, e.g. -Dwasm-optimize=ReleaseFast]
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"

@@ -38,13 +38,14 @@ serial getty on the receiver's port.
 
 | Script | What it does |
 |---|---|
-| `scripts/build.sh [test]` | static `aarch64-linux-musl` binary (`test` runs the unit tests first) |
+| `scripts/build.sh [test]` | static `aarch64-linux-musl` binary (`test` runs the blocking gate first) |
 | `scripts/deploy.sh rtk1\|rtk2\|all [--config] [--no-restart]` | build, copy (rsync if present, else scp), install, restart |
 | `scripts/logs.sh rtk1\|rtk2` | `journalctl -u rtkd -f` |
 | `scripts/gnss-tap.sh rtk1\|rtk2 [secs]` | stop `rtkd`, capture the raw receiver stream to `captures/`, restart `rtkd` |
 | `scripts/gnss-cmd.py` / `gnss-probe.py` | copy to a Pi and send raw commands / probe bauds (stop `rtkd` first) |
 | `scripts/e2e-sim.sh` | full base+rover test on this machine with simulated receivers |
-| `zig build test` | unit tests (host) |
+| `zig build test -j4` | blocking build and end-to-end simulation |
+| `scripts/test-heavy.sh` | background static build and offline export |
 | `rtkd selftest` (on a Pi, service stopped) | UART, receiver, OLED, keys |
 | `rtkd screens` | render every OLED page to the terminal |
 

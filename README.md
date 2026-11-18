@@ -9,7 +9,7 @@ centimetre-level coordinates, a CSV, and a drawn topographic sheet.
 It is a **hobby system**: aim for survey practice you could defend, but do not use
 the output for permits or boundary decisions.
 
-One static binary, `rtkd` (Zig 0.16, `aarch64-linux-musl`, no runtime, 494 KB stripped),
+One static binary, `rtkd` (Zig 0.17.1, `aarch64-linux-musl`, no runtime, 494 KB stripped),
 runs on both units; the role comes from `/etc/rtk/rtk.conf`.
 
 ## Status
@@ -22,16 +22,16 @@ concrete buildings, antennas a few metres apart) and the whole chain worked.
 | Capability | How it is verified |
 |---|---|
 | Receiver bring-up, idempotent config (restart never restarts a survey) | on hardware: restart writes 0 settings; read-back of survey-in, fixed-position, RTCM and NMEA settings from the live BS |
-| NMEA / RTCM3 framing, CRC24Q, resync | unit tests on real captures from both HATs (48 clean frames, 0 bad) |
+| NMEA / RTCM3 framing, CRC24Q, resync | previously checked against real captures from both HATs (48 clean frames, 0 bad) |
 | Base caster, discovery beacon, rover link, reconnect | on hardware over Wi-Fi (base restart recovered live); loopback tests; sustained 6 frames/s, 0 loss |
 | OLED (SH1106), 8 keys, UART | `rtkd selftest` on both units; screens reviewed with `rtkd screens`. **Not yet confirmed by eye** that the panel shows the picture and rotation correctly |
-| Point occupation, CSV, jobs, base position store | unit tests + simulated end-to-end (below) |
+| Point occupation, CSV, jobs, base position store | simulated end-to-end (below) |
 | RTK fix, survey-in completion, point capture | **on hardware, outdoors:** rover went float to RTK FIX (5 mm estimated error, 29 satellites) through the real corrections link; the base survey-in completed and stored its position; two points marked on the same spot agreed to 9 mm horizontally and vertically. Absolute accuracy and open-field performance not yet measured |
 | Web status/downloads, phone MARK | tests + on hardware (status pages); MARK via the simulator |
 | Keypad power-off (K1+K3) | logic and unit files verified; **not triggered** on hardware |
-| Topo sheet and exports (PNG/PDF/SVG, DXF, ArchiCAD XYZ, OBJ, PNEZD, interactive HTML) | unit tests, plus a full simulated site (`examples/`); the in-browser viewer is tested with Node (geometry) and headless Chromium (rendering). **ArchiCAD import itself not tested** (no ArchiCAD here) |
+| Topo sheet and exports (PNG/PDF/SVG, DXF, ArchiCAD XYZ, OBJ, PNEZD, interactive HTML) | a full simulated site (`examples/`); the in-browser viewer was previously checked with Node (geometry) and headless Chromium (rendering). **ArchiCAD import itself not tested** (no ArchiCAD here) |
 | Live map at `/map` on the unit | served by `rtkd` and tested; **not yet deployed to the units** |
-| Map compute (TIN, contours, 3D) in WebAssembly | Zig core in `src/geom`: native unit tests, Node cross-check against the JS reference (same triangles, same contour length), headless-Chromium renders; 6,000 points in 12 ms on a desktop. **Not tried on a phone**; JS fallback is automatic. See [docs/map-compute.md](docs/map-compute.md) (also why not WebGPU) |
+| Map compute (TIN, contours, 3D) in WebAssembly | Zig core in `src/geom`: previously cross-checked against the JS reference (same triangles, same contour length), headless-Chromium renders; 6,000 points in 12 ms on a desktop. **Not tried on a phone**; JS fallback is automatic. See [docs/map-compute.md](docs/map-compute.md) (also why not WebGPU) |
 
 Run the whole simulated system with `scripts/e2e-sim.sh` (38 checks: survey-in,
 discovery, RTK via the real corrections path, three marked points to a few mm,
@@ -98,18 +98,17 @@ panic and a 3-second systemd restart rather than silently wrong survey data.
 ## Development
 
 ```sh
-zig build test                 # 87 daemon + 17 map-geometry unit tests, host-native, uses real receiver captures
-python3 -m unittest tools/test_topo.py
-node tools/test_viewer.js      # JS reference geometry of the in-browser map: Delaunay TIN, contours
-node tools/test_wasm.js        # the wasm core vs that reference, stamp check, speed table
-scripts/build-wasm.sh          # rebuild src/map.wasm after editing src/geom (commit the result)
-scripts/e2e-sim.sh             # full base+rover system on this machine, no hardware
-tools/sim_survey.py            # survey a synthetic site through the real stack, then draw it
+zig build test -j4             # blocking: build, configuration, simulated base and rover
+scripts/test-heavy.sh          # background: static build and offline map export
+scripts/build-wasm.sh -j4      # rebuild the embedded WebAssembly after editing src/geom
+scripts/e2e-sim.sh             # full simulation using the real daemon
 ```
 
-Zig is at `/home/hotschmoe/tools/zig-aarch64-linux-0.16.0/zig` (override with `$ZIG`).
-Never run unit tests or the simulator against `/dev/serial0` on a unit: stop the
-service first (`scripts/gnss-tap.sh` does).
+Use Zig 0.17.1 on PATH (or override with `$ZIG`). Follow the
+[engineering conventions](https://github.com/hotschmoe/hotschmoe-setup/blob/master/ENGINEERING.md).
+The background gate requires Python with numpy and matplotlib. Run it nightly or every 10–20 commits;
+on failure, rerun the failing path on earlier commits to find the regression. Never run the simulator
+against a unit's UART.
 
 ## License
 

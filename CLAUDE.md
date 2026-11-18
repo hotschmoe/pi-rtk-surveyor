@@ -11,16 +11,14 @@ by a Zig daemon, `rtkd` (rewrite branch `rewrite/zig-rtkd`). See README.md first
 ## Commands
 
 ```sh
-zig build test                           # unit tests, host-native (the dev box is aarch64 too)
+zig build test -j4                       # blocking build, configuration and simulator gate
+scripts/test-heavy.sh                    # background static build and offline export
 scripts/build.sh [test]                  # static aarch64-linux-musl binary -> zig-out/bin/rtkd
 scripts/deploy.sh rtk1|rtk2|all [--config]
 scripts/logs.sh rtk1|rtk2
 scripts/gnss-tap.sh rtk1|rtk2 [secs]     # raw receiver capture (stops rtkd, restarts it)
 scripts/provision.sh rtk1|rtk2           # once per unit
 scripts/e2e-sim.sh                       # full system on this machine with simulated receivers
-python3 -m unittest tools/test_topo.py
-node tools/test_viewer.js
-node tools/test_wasm.js                  # wasm core vs JS reference + speed table
 scripts/build-wasm.sh                    # rebuild src/map.wasm from src/geom (commit it)
 ```
 
@@ -46,10 +44,9 @@ One thread, one epoll loop (`app.zig`); no libc, no std.Io: raw syscalls through
 * `http.zig` `page.html` `viewer.html` `map.wasm`: status page, downloads, POST-only actions, and `/map` (plan + 3D
   viewer) plus `/map.wasm`. The viewer's compute (TIN, contours, 3D prep) is Zig in `src/geom/` compiled to
   wasm32-freestanding; the committed `src/map.wasm` is embedded in rtkd and the Pi only serves bytes. After
-  editing `src/geom` run `scripts/build-wasm.sh` and commit `map.wasm` + `map.wasm.sha256` (`tools/test_wasm.js`
-  fails when stale). `viewer.html` keeps the pure-JS geometry as the automatic fallback and as the test
-  reference (its geometry block is tested by `tools/test_viewer.js`; `tools/test_wasm.js` cross-checks wasm
-  against it). `tools/topo.py` inlines data and the base64 wasm into one offline file. Replies go through a
+  editing `src/geom` run `scripts/build-wasm.sh -j4` and commit `map.wasm` + `map.wasm.sha256`.
+  `viewer.html` keeps the pure-JS geometry as the automatic fallback. `tools/topo.py` inlines data and
+  the base64 wasm into one offline file. Replies go through a
   96 KB buffer, so html and wasm must each stay under ~90 KB (comptime-asserted). Decision on WebGPU: no, see
   docs/map-compute.md.
 
@@ -81,3 +78,10 @@ scatter; log lines go through `log.zig` (journald priority prefixes); tests keep
   card by `/etc/hostname` on its root partition.
 * The Wi-Fi password lives only in the cards' NetworkManager profiles; never copy it into the repo.
 * Prefer editing the existing modules over adding new ones; keep functions pure where the hardware allows.
+
+## Testing policy
+
+Follow [ENGINEERING.md](https://github.com/hotschmoe/hotschmoe-setup/blob/master/ENGINEERING.md).
+`zig build test -j4` is the blocking gate; `scripts/test-heavy.sh` is the background gate, run nightly
+or every 10–20 commits. It requires Python with numpy and matplotlib. On a background failure, rerun
+the failing path on earlier commits to find the regression. Do not add unit or exact-output tests.

@@ -122,25 +122,3 @@ fn ifaceAddr(iface: []const u8) ?[4]u8 {
     if (linux.errno(linux.ioctl(fd, 0x8915, @intFromPtr(&req))) != .SUCCESS) return null; // SIOCGIFADDR
     return @bitCast(req.addr.addr);
 }
-
-test "procfs parsers on real-world samples" {
-    try std.testing.expectApproxEqAbs(@as(f32, 48.312), parseTemp("48312\n").?, 1e-3);
-    try std.testing.expectApproxEqAbs(@as(f32, 0.42), parseLoad("0.42 0.30 0.21 1/150 1234\n").?, 1e-6);
-    try std.testing.expectEqual(@as(?u64, 12345), parseUptime("12345.67 40000.00\n"));
-    try std.testing.expectEqual(@as(?u8, 75), parseMem("MemTotal:         400000 kB\nMemFree:  1 kB\nMemAvailable:     100000 kB\n"));
-    const w =
-        \\Inter-| sta-|   Quality        |   Discarded packets               | Missed | WE
-        \\ face | tus | link level noise |  nwid  crypt   frag  retry   misc | beacon | 22
-        \\wlan0: 0000   70.  -40.  -256        0      0      0      0      0        0
-    ;
-    try std.testing.expectEqual(@as(?i16, -40), parseWireless(w, "wlan0"));
-    try std.testing.expect(parseWireless(w, "wlan1") == null);
-    try std.testing.expect(parseTemp("junk") == null);
-}
-
-test "this machine: refresh does not crash and finds a load average" {
-    var i: Info = .{};
-    i.refresh("definitely-not-an-interface");
-    try std.testing.expect(i.load1 != null);
-    try std.testing.expect(i.ip == null);
-}

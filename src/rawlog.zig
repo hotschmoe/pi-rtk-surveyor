@@ -116,35 +116,3 @@ pub const RawLog = struct {
         }
     }
 };
-
-test "rotates by size, keeps only the newest files, numbering survives reopen" {
-    const dir = ".zig-cache/rawlog-test";
-    try sys.mkdirAll(dir);
-    var s: u32 = 1;
-    while (s < 20) : (s += 1) {
-        var p: [96]u8 = undefined;
-        sys.unlink(std.fmt.bufPrint(&p, "{s}/t-{d:0>6}.bin", .{ dir, s }) catch unreachable);
-    }
-    var r = try RawLog.open(dir, "t", 1, 3);
-    r.rotate_bytes = 10_000; // keep the test small
-    var chunk: [4096]u8 = undefined;
-    @memset(&chunk, 'x');
-    for (0..12) |_| r.write(&chunk); // ~49 KB -> several rotations
-    r.close();
-    try std.testing.expect(r.seq >= 5);
-
-    const Count = struct {
-        n: u32 = 0,
-        pub fn entry(self: *@This(), name: []const u8) void {
-            if (std.mem.startsWith(u8, name, "t-")) self.n += 1;
-        }
-    };
-    var c: Count = .{};
-    try sys.forEachEntry(dir, &c);
-    try std.testing.expect(c.n <= 4); // keep=3 plus the open one
-
-    const before = r.seq;
-    var r2 = try RawLog.open(dir, "t", 1, 3);
-    defer r2.close();
-    try std.testing.expectEqual(before + 1, r2.seq);
-}

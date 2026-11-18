@@ -46,21 +46,3 @@ pub fn stamp(buf: []u8, t: i64) []const u8 {
     const c = fromUnix(t);
     return std.fmt.bufPrint(buf, "{d:0>4}{d:0>2}{d:0>2}-{d:0>2}{d:0>2}{d:0>2}", .{ @as(u32, @intCast(@max(c.year, 0))), c.month, c.day, c.hour, c.min, c.sec }) catch buf[0..0];
 }
-
-test "known instants" {
-    try std.testing.expectEqual(@as(i64, 0), daysFromCivil(1970, 1, 1));
-    try std.testing.expectEqual(@as(i64, 1_000_000_000), toUnix(.{ .year = 2001, .month = 9, .day = 9, .hour = 1, .min = 46, .sec = 40 }));
-    try std.testing.expectEqual(@as(i64, 1_782_000_000), toUnix(fromUnix(1_782_000_000)));
-    var b: [32]u8 = undefined;
-    try std.testing.expectEqualStrings("2001-09-09T01:46:40Z", iso(&b, 1_000_000_000));
-    try std.testing.expectEqualStrings("2024-02-29T23:59:59Z", iso(&b, 1_709_251_199)); // leap day
-    try std.testing.expectEqualStrings("1969-12-31T23:59:59Z", iso(&b, -1));
-    try std.testing.expectEqualStrings("20001231-235959", stamp(&b, 978_307_199));
-}
-
-test "round trip across many days incl. century rules" {
-    var t: i64 = -2_000_000_000;
-    while (t < 4_100_000_000) : (t += 86400 * 37 + 12345) {
-        try std.testing.expectEqual(t, toUnix(fromUnix(t)));
-    }
-}

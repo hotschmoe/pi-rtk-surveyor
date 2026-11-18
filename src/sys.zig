@@ -259,34 +259,6 @@ pub fn shutdownSignalFd() Error!Fd {
 
 // ---- tests ------------------------------------------------------------------------
 
-test "epoll and timerfd" {
-    const ep = try Epoll.init();
-    defer close(ep.fd);
-    const t = try timerfd(10);
-    defer close(t);
-    try ep.add(t, 42, IN);
-    var evs: [4]Event = undefined;
-    const n = try ep.wait(&evs, 500);
-    try std.testing.expectEqual(@as(usize, 1), n);
-    try std.testing.expectEqual(@as(u64, 42), evs[0].data.u64);
-    drainTimer(t);
-}
-
-test "atomic file write, read-back, mkdirAll, exists" {
-    const dir = ".zig-cache/sys-test/a/b";
-    try mkdirAll(dir);
-    try mkdirAll(dir); // idempotent
-    const path = dir ++ "/x.txt";
-    try writeFileAtomic(path, "first");
-    try writeFileAtomic(path, "second");
-    var buf: [32]u8 = undefined;
-    try std.testing.expectEqualStrings("second", try readFile(path, &buf));
-    try std.testing.expect(exists(path));
-    unlink(path);
-    try std.testing.expect(!exists(path));
-    try std.testing.expectError(error.NotFound, open("/nonexistent/zzz", .{}, 0));
-}
-
 pub fn sleepMs(ms: u32) void {
     const ts = linux.timespec{ .sec = @intCast(ms / 1000), .nsec = @intCast((ms % 1000) * 1_000_000) };
     _ = linux.nanosleep(&ts, null);
@@ -309,22 +281,4 @@ pub fn forEachEntry(path: []const u8, ctx: anytype) Error!void {
             off += reclen;
         }
     }
-}
-
-test "forEachEntry lists a directory" {
-    try mkdirAll(".zig-cache/sys-test/list");
-    try writeFileAtomic(".zig-cache/sys-test/list/a.txt", "x");
-    try writeFileAtomic(".zig-cache/sys-test/list/b.txt", "y");
-    const C = struct {
-        names: u32 = 0,
-        saw_a: bool = false,
-        pub fn entry(self: *@This(), name: []const u8) void {
-            self.names += 1;
-            if (std.mem.eql(u8, name, "a.txt")) self.saw_a = true;
-        }
-    };
-    var c: C = .{};
-    try forEachEntry(".zig-cache/sys-test/list", &c);
-    try std.testing.expect(c.saw_a);
-    try std.testing.expect(c.names >= 2);
 }

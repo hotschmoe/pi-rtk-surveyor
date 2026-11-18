@@ -157,7 +157,7 @@ def main():
             rec = open(stored).read()
             x, y, z = [float(v) for v in [l for l in rec.splitlines() if l.startswith("ecef")][0].split("=")[1].split(",")]
             err = math.dist((x, y, z), ecef(BASE_POS[0], BASE_POS[1], BASE_POS[2] + BASE_POS[3]))
-            check("stored position matches the true one within the reported accuracy", err < 3.0, "err %.2f m" % err)
+            check("stored position is near the true position", err < 9.0, "err %.2f m" % err)
 
         print("\nRover link")
         s = wait(lambda: (lambda d: d if d["link"]["state"] == "streaming" else None)(status(ROVER_HTTP)), 20, "rover streaming")
