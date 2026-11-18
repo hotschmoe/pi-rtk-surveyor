@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Build, copy to the unit(s), install and restart the service.
-#   scripts/deploy.sh rtk1|rtk2|all [--config] [--no-restart]
-#   --config   also install deploy/units/<unit>.conf as /etc/rtk/rtk.conf
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 target="${1:-}"; [ -n "$target" ] || die "usage: deploy.sh rtk1|rtk2|all [--config] [--no-restart]"

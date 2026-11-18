@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Capture the raw receiver byte stream with rtkd stopped. The service is
-# restarted afterwards, even on Ctrl-C.
-#   scripts/gnss-tap.sh rtk1|rtk2 [seconds=10]  -> captures/<unit>-<utc>.raw
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 u="${1:-}"; [ -n "$u" ] || die "usage: gnss-tap.sh rtk1|rtk2 [seconds]"

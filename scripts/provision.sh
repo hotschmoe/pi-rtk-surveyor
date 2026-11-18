@@ -1,10 +1,4 @@
 #!/usr/bin/env bash
-# Prepare a running Pi to host rtkd. Idempotent. Never touches Wi-Fi credentials.
-#   scripts/provision.sh rtk1|rtk2
-# Creates the 'rtk' service user (groups dialout/spi/gpio), /etc/rtk and
-# /var/lib/rtk, installs the systemd unit and the unit's config if none exists,
-# disables the old Python service, makes the journal persistent (capped at 30 MB), and enables
-# rtkd plus the keypad power-off path unit.
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 u="${1:-}"; [ -n "$u" ] || die "usage: provision.sh rtk1|rtk2"
@@ -17,7 +11,6 @@ push "$REPO/deploy/journald-rtk.conf" "$host" /tmp/journald-rtk.conf
 push "$REPO/deploy/rtk-poweroff.service" "$host" /tmp/rtk-poweroff.service
 ssh "$host" 'bash -s' <<'REMOTE'
 set -e
-# Free the UART: the previous project's service and any serial getty on it.
 sudo systemctl disable --now pi-rtk-surveyor 2>/dev/null || true
 sudo systemctl disable --now serial-getty@ttyAMA0 serial-getty@serial0 2>/dev/null || true
 

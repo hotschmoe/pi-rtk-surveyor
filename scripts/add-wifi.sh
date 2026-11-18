@@ -1,10 +1,4 @@
 #!/usr/bin/env bash
-# Teach the units a field Wi-Fi network (phone hotspot or travel router), alongside the office one.
-#   scripts/add-wifi.sh rtk1|rtk2|all "SSID" [priority=10]
-# The password is read from the terminal (not echoed), sent over ssh stdin, and written ONLY to
-# a root-owned NetworkManager profile on the Pi. It is never stored in this repository, in shell
-# history, or on a command line. Existing profiles (the office Wi-Fi) are left untouched; the Pi
-# joins whichever known network is in range, highest priority first.
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 target="${1:-}"; ssid="${2:-}"; prio="${3:-10}"

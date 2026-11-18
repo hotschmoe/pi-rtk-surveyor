@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Hardware-free end-to-end test: base + rover rtkd, each on a simulated receiver, over loopback.
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 cd "$REPO"
