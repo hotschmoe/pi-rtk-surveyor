@@ -23,3 +23,64 @@ The USB gadget host is preferred; the Wi-Fi alias is the fallback when USB is un
 
 Provisioning preserves an existing unit configuration and does not handle Wi-Fi credentials. The
 old daemon and serial getty are disabled to release the UART.
+
+## src/basepos.zig
+
+The stored base position keeps multi-day jobs in one reference frame. Its timestamp is Unix seconds,
+with zero meaning unknown; placeholders are rejected because a monument must be near Earth's surface.
+
+## src/config.zig
+
+Configuration is an INI file with sectioned keys and line-numbered errors. Base fixed coordinates
+are latitude, longitude and ellipsoidal height; zero OLED idle timeout disables blanking.
+
+## src/demux.zig
+
+Only checksum-valid NMEA and CRC-valid RTCM reach the sink. Sink slices are valid only during the
+callback. An invalid RTCM candidate is replayed after dropping its first byte to regain framing.
+
+## src/geo.zig
+
+Coordinates are WGS-84 degrees and ellipsoidal metres; ENU values are metres. Occupation statistics
+use offsets from the first sample to retain precision and report sample horizontal scatter. The
+height formula remains valid at the poles.
+
+## src/input.zig
+
+The Waveshare HAT inputs are active low with pull-ups. Debouncing waits for a quiet interval so a
+bouncing release cannot leave a key stuck. Drain pending edges both on readability and on ticks.
+
+## src/nmea.zig
+
+Parser slices borrow the caller's line buffer. Elevations from GGA are mean sea level metres;
+receiver time before first fix may contain the placeholder date 1980-01-06. GSA system IDs identify
+constellations and zero PRNs denote empty slots. GSA mode 1 means no fix, 2 means 2D, and 3
+means 3D; survey-in state 0 is idle, 1 in progress, and 2 complete.
+
+## src/ntrip.zig
+
+The server request parser returns slices into the request and the decoded credentials scratch buffer.
+NTRIP 1 streams can follow their header without a blank line; the RTCM framer discards extra bytes.
+
+## src/rtcm.zig
+
+RTCM frames use the 10403.x transport framing and CRC-24Q. Message 1005 coordinates are ECEF metres;
+the all-zero or polar position is the receiver's placeholder before survey-in.
+
+## src/rx.zig
+
+The receiver's GGA satellite count counts signals, so dual-band satellites may be counted twice.
+GSA sentences arrive after GGA: distinct system/PRN masks are committed at the next epoch. GSV is
+per band, so use the largest count per talker. A 99.99 error estimate means no solution.
+
+## src/survey.zig
+
+A point averages qualifying RTK epochs and never reports accuracy better than measured scatter.
+Corrections past the configured age do not qualify as RTK. Consecutive bad epochs restart the
+average. Ground elevation is orthometric; the first eight CSV
+columns retain the original schema. A point must reach flash before the UI reports SAVED.
+
+## src/timeutil.zig
+
+Conversions use the proleptic Gregorian calendar and UTC. The Pi has no RTC, so point timestamps
+prefer GNSS time over the system clock. The civil-day conversion follows Howard Hinnant's algorithm.

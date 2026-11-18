@@ -1,9 +1,3 @@
-//! Point occupation and the survey job file.
-//!
-//! A point is not a single GGA sentence: pressing MARK starts an occupation
-//! that averages epochs of qualifying RTK solutions, and only a complete,
-//! consistent occupation is written, with its own scatter statistics.
-
 const std = @import("std");
 const geo = @import("geo.zig");
 const nmea = @import("nmea.zig");
@@ -17,12 +11,9 @@ pub const Params = struct {
     min_epochs: u32 = 15,
     require_fixed: bool = true,
     max_hacc_m: f32 = 0.05,
-    /// Corrections older than this are not RTK, whatever the receiver claims.
     max_corr_age_s: f32 = 30,
 };
 
-/// Consecutive rejected epochs after which the average restarts, so one
-/// occupation never mixes a good and a bad solution.
 const restart_after_bad = 5;
 const min_early_epochs = 3;
 
@@ -31,7 +22,6 @@ pub const Point = struct {
     unix: i64,
     lat: f64,
     lon: f64,
-    /// Orthometric (MSL) elevation of the ground mark.
     elev: f64,
     ell_h: f64,
     hacc: f64,
@@ -121,7 +111,6 @@ pub const Occupation = struct {
         return self.phase == .occupying and self.stats.n >= self.params.min_epochs;
     }
 
-    /// Feed the receiver state after every NMEA batch; acts once per new GGA epoch.
     pub fn onEpoch(self: *Occupation, rx: *const rx_mod.Rx, now_ms: u64) void {
         if (self.phase != .occupying or rx.epoch == self.last_epoch) return;
         self.last_epoch = rx.epoch;
@@ -160,7 +149,6 @@ pub const Occupation = struct {
         self.restarts += 1;
     }
 
-    /// Build the record from what has been averaged and return to idle.
     pub fn finish(self: *Occupation, rx: *const rx_mod.Rx, unix: i64, baseline: ?f64, base_id: ?u16) ?Point {
         if (self.phase != .occupying or self.stats.n == 0) return null;
         self.phase = .idle;
@@ -169,8 +157,6 @@ pub const Occupation = struct {
         const sep = self.sep_sum / n;
         const sd_h = self.stats.sdHoriz();
         const sd_v = self.stats.sdVert();
-        // Reported accuracy is the receiver's own estimate if it gave one, but never
-        // better than the measured repeatability of this occupation.
         const epe_h: f64 = if (self.epe_n > 0) self.epe_h_sum / @as(f64, @floatFromInt(self.epe_n)) else 0;
         const epe_v: f64 = if (self.epe_n > 0) self.epe_v_sum / @as(f64, @floatFromInt(self.epe_n)) else 0;
         return .{
@@ -197,9 +183,6 @@ pub const Occupation = struct {
     }
 };
 
-// ---- CSV ------------------------------------------------------------------------------------------
-
-/// First eight columns are the original project schema; the rest are additions.
 pub const csv_header = "Point_ID,Timestamp,Latitude,Longitude,Elevation,Accuracy_H,Accuracy_V,Fix_Type,Code,Epochs,SD_H,SD_V,HDOP,Sats,Corr_Age,Baseline_m,Ellipsoid_H,Antenna_H,Base_ID\n";
 
 fn fixName(q: nmea.Quality) []const u8 {
@@ -225,7 +208,6 @@ pub fn csvRow(buf: []u8, p: Point) []const u8 {
     ) catch buf[0..0];
 }
 
-/// Job file: open for append, write the header if new, remember the last ID.
 pub const Job = struct {
     fd: sys.Fd,
     next_id: u32 = 1,
@@ -236,7 +218,6 @@ pub const Job = struct {
         var path: [320]u8 = undefined;
         const p = std.fmt.bufPrint(&path, "{s}/{s}.csv", .{ dir, name }) catch return error.InvalidArgument;
         var job = Job{ .fd = -1 };
-        // Scan existing rows for the highest ID so numbering continues after a reboot.
         var existing: [64 * 1024]u8 = undefined;
         if (sys.readFile(p, &existing)) |text| {
             var lines = std.mem.splitScalar(u8, text, '\n');
@@ -261,7 +242,6 @@ pub const Job = struct {
         sys.close(self.fd);
     }
 
-    /// Durable: the point is on flash before the UI says SAVED.
     pub fn append(self: *Job, p: Point) sys.Error!void {
         var buf: [320]u8 = undefined;
         const row = csvRow(&buf, p);
@@ -273,9 +253,6 @@ pub const Job = struct {
     }
 };
 
-// ---- GeoJSON (generated from the CSV on demand) ---------------------------------------------------------
-
-/// Convert job CSV text to a GeoJSON FeatureCollection. Returns the used prefix of `out`.
 pub fn geojsonFromCsv(csv: []const u8, out: []u8) error{NoSpace}![]u8 {
     var n: usize = 0;
     const head = "{\"type\":\"FeatureCollection\",\"features\":[";
@@ -307,5 +284,3 @@ pub fn geojsonFromCsv(csv: []const u8, out: []u8) error{NoSpace}![]u8 {
     @memcpy(out[n..][0..tail.len], tail);
     return out[0 .. n + tail.len];
 }
-
-// ---- tests --------------------------------------------------------------------------------------------------

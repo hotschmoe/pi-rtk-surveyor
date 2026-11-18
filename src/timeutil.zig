@@ -1,11 +1,7 @@
-//! Civil-calendar conversions (proleptic Gregorian, UTC). Pi Zero has no RTC,
-//! so point timestamps prefer GNSS time over the system clock.
-
 const std = @import("std");
 
 pub const Civil = struct { year: i32, month: u8, day: u8, hour: u8, min: u8, sec: u8 };
 
-/// Days since 1970-01-01 for a civil date (Howard Hinnant's algorithm).
 pub fn daysFromCivil(y_in: i32, m: u8, d: u8) i64 {
     const y: i64 = @as(i64, y_in) - @as(i64, if (m <= 2) 1 else 0);
     const era = @divFloor(y, 400);
@@ -35,13 +31,11 @@ pub fn toUnix(c: Civil) i64 {
     return daysFromCivil(c.year, c.month, c.day) * 86400 + @as(i64, c.hour) * 3600 + @as(i64, c.min) * 60 + c.sec;
 }
 
-/// "2026-10-03T14:05:09Z"
 pub fn iso(buf: []u8, t: i64) []const u8 {
     const c = fromUnix(t);
     return std.fmt.bufPrint(buf, "{d:0>4}-{d:0>2}-{d:0>2}T{d:0>2}:{d:0>2}:{d:0>2}Z", .{ @as(u32, @intCast(@max(c.year, 0))), c.month, c.day, c.hour, c.min, c.sec }) catch buf[0..0];
 }
 
-/// "20261003-140509" for file names.
 pub fn stamp(buf: []u8, t: i64) []const u8 {
     const c = fromUnix(t);
     return std.fmt.bufPrint(buf, "{d:0>4}{d:0>2}{d:0>2}-{d:0>2}{d:0>2}{d:0>2}", .{ @as(u32, @intCast(@max(c.year, 0))), c.month, c.day, c.hour, c.min, c.sec }) catch buf[0..0];

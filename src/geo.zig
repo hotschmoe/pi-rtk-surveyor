@@ -1,5 +1,3 @@
-//! WGS-84 geodesy and the running statistics used to average a point occupation.
-
 const std = @import("std");
 const math = std.math;
 
@@ -8,11 +6,8 @@ pub const f: f64 = 1.0 / 298.257223563;
 pub const e2: f64 = f * (2.0 - f);
 
 pub const Llh = struct {
-    /// Degrees, north positive.
     lat: f64,
-    /// Degrees, east positive.
     lon: f64,
-    /// Ellipsoidal height, metres.
     h: f64,
 };
 
@@ -40,12 +35,10 @@ pub fn toLlh(e: [3]f64) Llh {
     }
     const s = @sin(lat);
     n = a / @sqrt(1.0 - e2 * s * s);
-    // Valid at the poles, unlike p/cos(lat) - n.
     const h = p * @cos(lat) + e[2] * s - a * a / n;
     return .{ .lat = math.radiansToDegrees(lat), .lon = math.radiansToDegrees(lon), .h = h };
 }
 
-/// East, north, up of `p` in the local tangent frame at `origin`, metres.
 pub fn enu(origin: Llh, p: Llh) [3]f64 {
     const o = toEcef(origin);
     const q = toEcef(p);
@@ -78,14 +71,11 @@ pub fn fromEnu(origin: Llh, v: [3]f64) Llh {
     });
 }
 
-/// Horizontal distance between two points, metres.
 pub fn distance2d(p: Llh, q: Llh) f64 {
     const v = enu(p, q);
     return math.hypot(v[0], v[1]);
 }
 
-/// Welford accumulator over ENU offsets from the first sample. Offsets keep
-/// full double precision, which absolute lat/lon degrees (1e-8 deg = 1 mm) do not.
 pub const Occupation = struct {
     origin: Llh = undefined,
     n: u32 = 0,
@@ -108,7 +98,6 @@ pub const Occupation = struct {
         return fromEnu(self.origin, self.mean);
     }
 
-    /// Sample standard deviation of the horizontal scatter (2D, sqrt(sE^2 + sN^2)), metres.
     pub fn sdHoriz(self: Occupation) f64 {
         if (self.n < 2) return 0;
         return @sqrt((self.m2[0] + self.m2[1]) / @as(f64, @floatFromInt(self.n - 1)));

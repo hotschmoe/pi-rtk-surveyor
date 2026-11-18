@@ -1,8 +1,3 @@
-//! NMEA 0183 framing and the sentences rtkd consumes from the Quectel LC29H.
-//!
-//! Everything here is pure: bytes in, values out, no allocation. Slices
-//! returned from `parse` point into the caller's line buffer.
-
 const std = @import("std");
 
 pub fn checksum(body: []const u8) u8 {
@@ -11,7 +6,6 @@ pub fn checksum(body: []const u8) u8 {
     return c;
 }
 
-/// Build "$BODY*HH\r\n" into `buf` and return the used prefix.
 pub fn frame(buf: []u8, body: []const u8) error{NoSpace}![]u8 {
     if (buf.len < body.len + 6) return error.NoSpace;
     buf[0] = '$';
@@ -27,7 +21,6 @@ pub fn frame(buf: []u8, body: []const u8) error{NoSpace}![]u8 {
     return buf[0 .. i + 5];
 }
 
-/// Validate "$BODY*HH" (trailing CR/LF tolerated) and return BODY.
 pub fn verify(line: []const u8) error{ Malformed, BadChecksum }![]const u8 {
     const l = std.mem.trimEnd(u8, line, "\r\n");
     if (l.len < 4 or l[0] != '$' or l[l.len - 3] != '*') return error.Malformed;
@@ -66,17 +59,14 @@ pub const Quality = enum(u8) {
 };
 
 pub const Gga = struct {
-    /// Seconds since 00:00:00 UTC.
     utc_s: f64,
     lat: ?f64,
     lon: ?f64,
     quality: Quality,
     sats: u8,
     hdop: ?f32,
-    /// Height above mean sea level (geoid), metres.
     alt_msl: ?f64,
     geoid_sep: ?f64,
-    /// Age of differential data, seconds.
     diff_age: ?f32,
 };
 
@@ -84,16 +74,13 @@ pub const Rmc = struct {
     utc_s: f64,
     valid: bool,
     speed_kn: ?f32,
-    /// Calendar date, if the receiver knows it (it reports 1980-01-06 before first fix).
     year: u16,
     month: u8,
     day: u8,
 };
 
 pub const Gsa = struct {
-    /// 1 = none, 2 = 2D, 3 = 3D.
     mode: u8,
-    /// PRNs of the satellites used (0 = empty slot) and the NMEA system ID (1 GPS, 2 GLONASS, ...; 0 if absent).
     ids: [12]u8,
     system: u8,
     pdop: ?f32,
@@ -103,11 +90,9 @@ pub const Gsa = struct {
 
 pub const Gsv = struct {
     talker: [2]u8,
-    /// Total satellites in view for this talker/band, as announced by the receiver.
     in_view: u8,
 };
 
-/// $PQTMEPE v2: estimated position error, metres.
 pub const Epe = struct {
     north: ?f32,
     east: ?f32,
@@ -116,9 +101,7 @@ pub const Epe = struct {
     spatial: ?f32,
 };
 
-/// $PQTMSVINSTATUS (base only).
 pub const Svin = struct {
-    /// 0 = idle, 1 = in progress, 2 = complete.
     state: u8,
     observed_s: u32,
     cfg_dur_s: u32,
@@ -129,7 +112,6 @@ pub const Svin = struct {
 pub const Ack = struct {
     pub const Kind = enum { pqtm, pair };
     kind: Kind,
-    /// Command name, e.g. "PQTMCFGSVIN" or, for PAIR, the 3-digit packet type.
     name: []const u8,
     ok: bool,
 };
@@ -158,7 +140,6 @@ fn int(comptime T: type, s: []const u8) ?T {
     return std.fmt.parseInt(T, s, 10) catch null;
 }
 
-/// "hhmmss.sss" to seconds of day.
 fn utcSeconds(s: []const u8) f64 {
     if (s.len < 6) return 0;
     const h = int(u32, s[0..2]) orelse return 0;
@@ -167,7 +148,6 @@ fn utcSeconds(s: []const u8) f64 {
     return @as(f64, @floatFromInt(h * 3600 + m * 60)) + sec;
 }
 
-/// "ddmm.mmmm" + hemisphere to signed degrees. `deg_digits` is 2 for lat, 3 for lon.
 fn angle(s: []const u8, hemi: []const u8, deg_digits: usize) ?f64 {
     if (s.len <= deg_digits or hemi.len != 1) return null;
     const d = num(f64, s[0..deg_digits]) orelse return null;
@@ -199,7 +179,6 @@ const pqtm_kinds = std.StaticStringMap(PqtmKind).initComptime(.{
     .{ "PQTMVERNO", .verno },
 });
 
-/// Parse a verified sentence body (no '$', no '*HH').
 pub fn parse(body: []const u8) Msg {
     var it = std.mem.splitScalar(u8, body, ',');
     const head = field(&it);
@@ -332,7 +311,6 @@ fn parsePqtm(head: []const u8, it: *std.mem.SplitIterator(u8, .scalar)) Msg {
     }
 }
 
-/// Replies look like $PQTMCFGSVIN,OK,... or $PQTMCFGSVIN,ERROR,n
 fn parseAck(head: []const u8, it: *std.mem.SplitIterator(u8, .scalar)) Msg {
     const status = field(it);
     if (std.mem.eql(u8, status, "OK")) return .{ .ack = .{ .kind = .pqtm, .name = head, .ok = true } };

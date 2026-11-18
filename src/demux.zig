@@ -1,7 +1,3 @@
-//! Splits the LC29H's single serial byte stream into NMEA sentences and RTCM3
-//! frames. The receiver interleaves them at message boundaries, but we do not
-//! rely on that: any damage resynchronises on the next '$' or valid 0xD3 frame.
-
 const std = @import("std");
 const nmea = @import("nmea.zig");
 const rtcm = @import("rtcm.zig");
@@ -24,9 +20,6 @@ pub const Demux = struct {
     buf: [rtcm.max_frame]u8 = undefined,
     stats: Stats = .{},
 
-    /// Feed bytes; `sink` receives `onNmea(body)` for checksum-valid sentences
-    /// (body excludes '$' and '*HH') and `onRtcm(frame)` for CRC-valid frames.
-    /// Slices are valid only for the duration of the callback.
     pub fn feed(self: *Demux, data: []const u8, sink: anytype) void {
         for (data) |b| self.byte(b, sink);
     }
@@ -36,7 +29,6 @@ pub const Demux = struct {
             .idle => self.start(b),
             .line => {
                 if (b == '$') {
-                    // Truncated sentence followed by a new one.
                     self.stats.junk_bytes += self.len;
                     self.stats.nmea_bad += 1;
                     self.len = 0;
@@ -102,8 +94,6 @@ pub const Demux = struct {
         } else |_| self.stats.nmea_bad += 1;
     }
 
-    /// The candidate frame was invalid: its first byte was not a real preamble.
-    /// Drop it and replay the remaining bytes through the state machine.
     fn resync(self: *Demux, sink: anytype) void {
         var tmp: [rtcm.max_frame]u8 = undefined;
         const n = self.len - 1;

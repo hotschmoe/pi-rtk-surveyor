@@ -1,6 +1,3 @@
-//! /etc/rtk/rtk.conf: INI with [sections], '#' or ';' comments.
-//! Every problem is reported with its line number so it can be shown on the OLED.
-
 const std = @import("std");
 
 pub fn Str(comptime N: usize) type {
@@ -30,22 +27,18 @@ pub fn Str(comptime N: usize) type {
 
 pub const Role = enum { base, rover };
 pub const BaseMode = enum {
-    /// Reuse the stored position if there is one, otherwise survey in.
     auto,
     survey_in,
     fixed,
 };
 
 pub const Config = struct {
-    // [unit]
     role: ?Role = null,
     name: Str(16) = Str(16).init("RTK"),
 
-    // [gnss]
     gnss_device: Str(144) = Str(144).init("/dev/serial0"),
     baud: u32 = 115200,
 
-    // [caster]  base: where to listen / rover: where to connect
     caster_host: Str(64) = Str(64).init("auto"),
     caster_port: u16 = 2101,
     mount: Str(32) = Str(32).init("BASE"),
@@ -53,7 +46,6 @@ pub const Config = struct {
     password: Str(32) = .{},
     beacon_port: u16 = 2102,
 
-    // [base]
     base_mode: BaseMode = .auto,
     survey_secs: u32 = 900,
     survey_acc_m: f32 = 3.0,
@@ -63,23 +55,19 @@ pub const Config = struct {
     have_fixed: bool = false,
     rtcm_msm: u8 = 7,
 
-    // [survey]
     pole_height_m: f64 = 2.000,
     min_epochs: u32 = 15,
     require_fixed: bool = true,
     max_hacc_m: f32 = 0.050,
     codes: Str(120) = Str(120).init("PT,COR,EP,FNC,BLD,TRE,UTL,PIN"),
 
-    // [log]
     log_dir: Str(144) = Str(144).init("/var/lib/rtk"),
     raw_rotate_mb: u32 = 8,
     raw_keep: u32 = 6,
 
-    // [ui]
     http_port: u16 = 8080,
     rotate_180: bool = true,
     contrast: u8 = 0x7F,
-    /// Blank the OLED after this many idle seconds (0 = never). Any key wakes it.
     sleep_secs: u32 = 120,
 };
 
@@ -108,7 +96,6 @@ fn parseBool(v: []const u8) ?bool {
     return null;
 }
 
-/// Config keys: "section.key" -> field of `Config`. A key naming a missing field is a compile error.
 const keys = .{
     .{ "unit.role", "role" },
     .{ "unit.name", "name" },
@@ -138,7 +125,6 @@ const keys = .{
     .{ "ui.sleep_secs", "sleep_secs" },
 };
 
-/// Parse `v` into `dst` according to the field's type. Returns an error message or null.
 fn setValue(comptime T: type, dst: *T, v: []const u8) ?[]const u8 {
     switch (@typeInfo(T)) {
         .optional => |o| {
@@ -156,7 +142,6 @@ fn setValue(comptime T: type, dst: *T, v: []const u8) ?[]const u8 {
     return null;
 }
 
-/// "must be a, b or c" built at compile time from the enum's names.
 fn enumHint(comptime T: type) []const u8 {
     const hint = comptime blk: {
         const names = std.meta.fieldNames(T);
@@ -169,7 +154,6 @@ fn enumHint(comptime T: type) []const u8 {
     return hint;
 }
 
-/// Returns an error message, or null on success.
 fn apply(c: *Config, key: []const u8, v: []const u8) ?[]const u8 {
     inline for (keys) |k| {
         if (std.mem.eql(u8, key, k[0])) {
@@ -181,7 +165,6 @@ fn apply(c: *Config, key: []const u8, v: []const u8) ?[]const u8 {
         }
     }
     if (std.mem.eql(u8, key, "base.fixed")) {
-        // fixed = lat, lon, ellipsoidal height
         var it = std.mem.splitScalar(u8, v, ',');
         inline for (.{ "fixed_lat", "fixed_lon", "fixed_h" }) |f| {
             const part = std.mem.trim(u8, it.next() orelse "", " ");

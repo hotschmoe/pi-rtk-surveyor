@@ -1,16 +1,9 @@
-//! NTRIP 1.0 / 2.0 wire protocol, without any I/O.
-//!
-//! Server side: parse a client's request, build the reply or the sourcetable.
-//! Client side: `ResponseParser` strips the reply header (including HTTP
-//! chunked framing) and hands the RTCM byte stream to a sink.
-
 const std = @import("std");
 
 pub const max_request = 1024;
 
 pub const Request = struct {
     mount: []const u8,
-    /// Client announced "Ntrip-Version: Ntrip/2.0".
     v2: bool,
     user: []const u8,
     password: []const u8,
@@ -33,8 +26,6 @@ fn headerValue(headers: []const u8, name: []const u8) ?[]const u8 {
     return null;
 }
 
-/// `scratch` receives the decoded Basic credentials; the returned slices point into it
-/// and into `buf`.
 pub fn parseRequest(buf: []const u8, scratch: *[96]u8) Parsed {
     const end = std.mem.indexOf(u8, buf, "\r\n\r\n") orelse {
         return if (buf.len >= max_request) .bad else .need_more;
@@ -74,7 +65,6 @@ pub const Station = struct {
     identifier: []const u8,
     lat: f64,
     lon: f64,
-    /// RTCM message list, e.g. "1005(1),1074(1)".
     messages: []const u8 = "1005(1),1074(1),1084(1),1094(1),1124(1)",
     authentication: u8 = 'N',
 };
@@ -122,7 +112,6 @@ pub fn clientRequest(out: []u8, host: []const u8, port: u16, mount: []const u8, 
     ) catch error.NoSpace;
 }
 
-/// Client-side reply parser. Feed raw socket bytes; payload bytes go to `sink.onData`.
 pub const ResponseParser = struct {
     pub const Status = enum { reading_header, streaming, rejected, sourcetable };
 
@@ -168,8 +157,6 @@ pub const ResponseParser = struct {
         }
     }
 
-    /// Look for the end of the header in what has been buffered. Returns how many
-    /// bytes of the *newly added* data were consumed by the header.
     fn scanHeader(self: *ResponseParser, old_len: usize) usize {
         const h = self.header[0..self.hlen];
         const first_end = std.mem.indexOf(u8, h, "\r\n") orelse return 0;
@@ -180,8 +167,6 @@ pub const ResponseParser = struct {
                 self.status = .rejected;
                 return 0;
             }
-            // NTRIP 1: stream follows, with or without a blank line. Anything extra is
-            // junk that the RTCM framer discards.
             self.status = .streaming;
             return first_end + 2 - old_len;
         }
@@ -229,9 +214,7 @@ pub const ResponseParser = struct {
                         self.in_ext = false;
                     } else if (b == ';') {
                         self.in_ext = true; // chunk extension: ignore until end of line
-                    } else if (self.in_ext) {
-                        // skip
-                    } else if (std.fmt.charToDigit(b, 16)) |d| {
+                    } else if (self.in_ext) {} else if (std.fmt.charToDigit(b, 16)) |d| {
                         self.size_acc = (self.size_acc << 4) | d;
                         self.size_digits +|= 1;
                     } else |_| {} // CR or chunk extension
@@ -258,8 +241,6 @@ fn parseCode(s: []const u8) u16 {
     const end = std.mem.indexOfScalar(u8, t, ' ') orelse t.len;
     return std.fmt.parseInt(u16, t[0..end], 10) catch 0;
 }
-
-// ---- tests --------------------------------------------------------------------------
 
 const Sink = struct {
     got: [4096]u8 = undefined,

@@ -1,14 +1,9 @@
-//! The surveyed base position, kept across reboots so that reoccupying the
-//! same monument reuses the same coordinates: every point in a multi-day job
-//! then shares one reference frame.
-
 const std = @import("std");
 const sys = @import("sys.zig");
 
 pub const Record = struct {
     ecef: [3]f64,
     acc_m: f32,
-    /// Unix seconds when the survey-in completed (0 if unknown).
     when: i64,
 };
 
@@ -46,7 +41,6 @@ pub fn parse(text: []const u8) ?Record {
         }
     }
     if (!have) return null;
-    // Reject placeholders: a real monument is somewhere on the Earth's surface.
     if (std.math.hypot(rec.ecef[0], std.math.hypot(rec.ecef[1], rec.ecef[2])) < 6.0e6) return null;
     return rec;
 }

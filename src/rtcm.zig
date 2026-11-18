@@ -1,14 +1,9 @@
-//! RTCM 10403.x transport framing (preamble 0xD3, 10-bit length, CRC-24Q) and
-//! the few message decoders rtkd needs: station position (1005) for the
-//! rover's "where is my base" display, and MSM headers for satellite counts.
-
 const std = @import("std");
 
 pub const preamble: u8 = 0xD3;
 pub const max_payload = 1023;
 pub const max_frame = 3 + max_payload + 3;
 
-/// CRC-24Q lookup table, built at compile time.
 const crc_table = blk: {
     @setEvalBranchQuota(10_000);
     var t: [256]u24 = undefined;
@@ -29,7 +24,6 @@ pub fn crc24q(data: []const u8) u24 {
     return crc;
 }
 
-/// Total on-wire length implied by a 3-byte header, or null if the header is invalid.
 pub fn frameLen(hdr: []const u8) ?usize {
     if (hdr.len < 3 or hdr[0] != preamble or hdr[1] & 0xFC != 0) return null;
     const payload = (@as(usize, hdr[1] & 3) << 8) | hdr[2];
@@ -43,7 +37,6 @@ pub fn crcOk(frame: []const u8) bool {
     return crc24q(frame[0..n]) == got;
 }
 
-/// Wrap `payload` in a transport frame. Used for tests and synthetic traffic.
 pub fn encode(out: []u8, payload: []const u8) error{NoSpace}![]u8 {
     if (payload.len > max_payload or out.len < payload.len + 6) return error.NoSpace;
     out[0] = preamble;
@@ -62,7 +55,6 @@ pub fn body(frame: []const u8) []const u8 {
     return frame[3 .. frame.len - 3];
 }
 
-/// Big-endian bit field, up to 64 bits. Caller guarantees bounds.
 pub fn bits(data: []const u8, pos: usize, n: u7) u64 {
     var v: u64 = 0;
     var i: usize = 0;
@@ -86,16 +78,13 @@ pub fn msgType(frame: []const u8) ?u12 {
 
 pub const Station = struct {
     id: u12,
-    /// ECEF antenna reference point, metres.
     ecef: [3]f64,
 
-    /// False for the all-zero/polar placeholder a base sends before it has a position.
     pub fn plausible(self: Station) bool {
         return std.math.hypot(self.ecef[0], self.ecef[1]) > 1000.0;
     }
 };
 
-/// Decode message 1005 (stationary RTK reference station ARP).
 pub fn decode1005(frame: []const u8) ?Station {
     const p = body(frame);
     if (p.len < 19 or msgType(frame) != 1005) return null;
@@ -144,13 +133,11 @@ pub const System = enum { gps, glonass, galileo, sbas, qzss, beidou, other };
 
 pub const Msm = struct {
     system: System,
-    /// MSM level 1..7.
     level: u3,
     station: u12,
     sats: u8,
 };
 
-/// Header of an MSM1..MSM7 message (1071-1127). Counts satellites in the mask.
 pub fn decodeMsm(frame: []const u8) ?Msm {
     const t = msgType(frame) orelse return null;
     if (t < 1071 or t > 1127) return null;

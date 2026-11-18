@@ -1,8 +1,3 @@
-//! Waveshare OLED HAT keys and joystick (GPIO 21/20/16 and 6/19/5/26/13),
-//! all active low with pull-ups. Edges are debounced by waiting for the line
-//! to be quiet and then trusting its level, so a bouncing release can never
-//! leave a key "stuck down".
-
 const std = @import("std");
 const sys = @import("sys.zig");
 const gpio = @import("gpio.zig");
@@ -15,7 +10,6 @@ pub const settle_ms = 20;
 
 pub const Edge = struct { button: Button, pressed: bool };
 
-/// Pure debounce logic (tested without hardware).
 pub const Debounce = struct {
     down: [count]bool = @as([count]bool, @splat(false)),
     last_event_ms: [count]u64 = @as([count]u64, @splat(0)),
@@ -31,7 +25,6 @@ pub const Debounce = struct {
         return false;
     }
 
-    /// `levels` bit i = electrical level of pins[i] (1 = released).
     pub fn settle(self: *Debounce, now_ms: u64, levels: u64, out: []Edge) usize {
         var n: usize = 0;
         for (0..count) |i| {
@@ -64,8 +57,6 @@ pub const Buttons = struct {
         return self.lines.fd;
     }
 
-    /// Drain events and settle. Call when the fd is readable and on every
-    /// housekeeping tick while `pending()`.
     pub fn service(self: *Buttons, now_ms: u64, out: []Edge) sys.Error!usize {
         var evs: [16]gpio.LineEvent = undefined;
         while (true) {
@@ -83,7 +74,6 @@ pub const Buttons = struct {
         return self.deb.anyDirty();
     }
 
-    /// Instantaneous pressed state (for self-test).
     pub fn pressedMask(self: Buttons) sys.Error!u8 {
         const lv = try self.lines.read();
         return @intCast(~lv & 0xFF);
