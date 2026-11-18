@@ -216,3 +216,21 @@ The probe operates directly on the Pi's UART; stop the daemon before use.
 
 The command tool operates directly on the Pi's UART; stop the daemon before use. Command bodies
 exclude NMEA framing and checksum.
+
+## deploy/journald-rtk.conf
+
+The `90-*` installed drop-in overrides Raspberry Pi OS's volatile journal setting. A 30 MB cap
+bounds disk use; observed rtkd logs were about 2 MB per day.
+
+## deploy/rtkd.service
+
+Confinement must still allow the serial port, SPI, GPIO and the daemon's state directory.
+
+## deploy/units/rtk1.conf
+
+The rover's `auto` caster host uses base discovery; a public caster can instead use an address,
+mount and credentials.
+
+## deploy/units/rtk2.conf
+
+The base's `auto` mode reuses a stored position, or surveys in and stores one if none exists.

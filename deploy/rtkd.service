@@ -16,7 +16,6 @@ StateDirectory=rtk
 StateDirectoryMode=0755
 SyslogLevelPrefix=yes
 
-# Confinement: the daemon needs the serial port, SPI, GPIO and its own state directory.
 ProtectSystem=strict
 ReadWritePaths=/var/lib/rtk
 ProtectHome=true
