@@ -1,7 +1,3 @@
-//! Operational logging to stderr. Under systemd (stderr is not a TTY) lines
-//! carry a "<N>" syslog priority prefix so journald records the level; on a
-//! terminal they get a monotonic timestamp instead.
-
 const std = @import("std");
 const builtin = @import("builtin");
 const linux = std.os.linux;
@@ -21,7 +17,7 @@ fn ttyCheck() bool {
 }
 
 fn emit(level: u8, tag: []const u8, comptime fmt: []const u8, args: anytype) void {
-    if (builtin.is_test) return; // keep `zig build test` output clean
+    if (builtin.is_test) return;
     var buf: [384]u8 = undefined;
     var n: usize = 0;
     if (ttyCheck()) {
@@ -52,7 +48,6 @@ pub fn debug(comptime fmt: []const u8, args: anytype) void {
     if (verbose) emit(7, "DBG ", fmt, args);
 }
 
-/// Plain stdout line for CLI commands (selftest, screens).
 pub fn out(comptime fmt: []const u8, args: anytype) void {
     var buf: [512]u8 = undefined;
     const s = std.fmt.bufPrint(&buf, fmt ++ "\n", args) catch return;

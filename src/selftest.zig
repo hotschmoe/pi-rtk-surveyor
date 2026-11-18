@@ -1,6 +1,3 @@
-//! `rtkd selftest`: prove each piece of hardware on its own, with plain output.
-//! Stop the service first; this opens the UART and the display itself.
-
 const std = @import("std");
 const sys = @import("sys.zig");
 const log = @import("log.zig");
@@ -95,7 +92,7 @@ fn testDisplayAndKeys(cfg: *const config.Config) bool {
     _ = f.text(0, 28, "0123456789 .,:;+-=/()[]<>", .small);
     f.box(0, 38, 128, 26);
     f.textCenter(41, "RTK FIX", .large);
-    f.box(0, 0, 128, 64); // frame so the panel edges and rotation are obvious
+    f.box(0, 0, 128, 64);
     o.flush(&f) catch |e| {
         log.out("  FAIL flush: {s}", .{@errorName(e)});
         return false;

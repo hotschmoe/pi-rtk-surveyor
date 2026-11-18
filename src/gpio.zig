@@ -1,6 +1,3 @@
-//! GPIO character device (uAPI v2): inputs with edge events, outputs.
-//! Struct layouts mirror <linux/gpio.h>; sizes are asserted at compile time.
-
 const std = @import("std");
 const linux = std.os.linux;
 const sys = @import("sys.zig");
@@ -55,7 +52,6 @@ const GET_LINE = linux.IOCTL.IOWR(0xB4, 0x07, LineRequest);
 const GET_VALUES = linux.IOCTL.IOWR(0xB4, 0x0E, LineValues);
 const SET_VALUES = linux.IOCTL.IOWR(0xB4, 0x0F, LineValues);
 
-/// A set of lines requested together. Index i corresponds to offsets[i].
 pub const Lines = struct {
     fd: sys.Fd,
     offsets: [8]u32 = undefined,
@@ -82,10 +78,8 @@ pub const Lines = struct {
         return l;
     }
 
-    /// Inputs with pull-ups and both-edge events (buttons).
     pub fn inputs(chip: []const u8, offsets: []const u32, consumer: []const u8) sys.Error!Lines {
         const l = try request(chip, offsets, F_INPUT | F_EDGE_RISING | F_EDGE_FALLING | F_BIAS_PULL_UP, null, consumer);
-        // Event reads must not block the main loop.
         const fl = linux.fcntl(l.fd, linux.F.GETFL, 0);
         _ = linux.fcntl(l.fd, linux.F.SETFL, fl | @as(usize, 1 << @bitOffsetOf(linux.O, "NONBLOCK")));
         return l;
@@ -99,7 +93,6 @@ pub const Lines = struct {
         sys.close(self.fd);
     }
 
-    /// Bit i is the level of offsets[i].
     pub fn read(self: Lines) sys.Error!u64 {
         var v = LineValues{ .bits = 0, .mask = (@as(u64, 1) << @intCast(self.n)) - 1 };
         _ = try sys.ioctl(self.fd, GET_VALUES, @intFromPtr(&v));
@@ -111,7 +104,6 @@ pub const Lines = struct {
         _ = try sys.ioctl(self.fd, SET_VALUES, @intFromPtr(&v));
     }
 
-    /// Drain pending edge events. Returns the number read.
     pub fn events(self: Lines, out: []LineEvent) sys.Error!usize {
         const n = sys.read(self.fd, std.mem.sliceAsBytes(out)) catch |e| switch (e) {
             error.WouldBlock => return 0,

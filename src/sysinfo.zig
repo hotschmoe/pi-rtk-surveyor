@@ -1,7 +1,3 @@
-//! Host health for the SYSTEM screen: temperature, load, memory, uptime, the
-//! Wi-Fi address and signal. All from procfs/sysfs; a missing file just
-//! leaves that field empty.
-
 const std = @import("std");
 const linux = std.os.linux;
 const sys = @import("sys.zig");
@@ -13,7 +9,6 @@ pub const Info = struct {
     uptime_s: ?u64 = null,
     ip: ?[4]u8 = null,
     rssi_dbm: ?i16 = null,
-    /// Under-voltage / throttling flags from the firmware, bit 0 = under-voltage now.
     throttled: ?u32 = null,
 
     pub fn refresh(self: *Info, iface: []const u8) void {
@@ -74,7 +69,6 @@ fn kb(line: []const u8) ?u64 {
     return std.fmt.parseInt(u64, it.next() orelse return null, 10) catch null;
 }
 
-/// /proc/net/wireless: "wlan0: 0000   70.  -40.  -256 ..." -> level in dBm.
 pub fn parseWireless(text: []const u8, iface: []const u8) ?i16 {
     var lines = std.mem.splitScalar(u8, text, '\n');
     while (lines.next()) |l| {
@@ -89,8 +83,6 @@ pub fn parseWireless(text: []const u8, iface: []const u8) ?i16 {
     return null;
 }
 
-/// Raspberry Pi OS exposes the firmware's under-voltage flag as an hwmon
-/// device named "rpi_volt". Returns bit 0 set while under-voltage is flagged.
 fn underVoltage() ?u32 {
     var buf: [64]u8 = undefined;
     for (0..6) |i| {

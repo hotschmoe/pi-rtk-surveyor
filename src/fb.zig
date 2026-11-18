@@ -1,7 +1,3 @@
-//! 128x64 monochrome framebuffer in SSD1306/SH1106 page layout
-//! (8 pages of 128 bytes, bit 0 = top pixel of the page), with the little
-//! drawing vocabulary the screens need. Pure: renders to memory only.
-
 const std = @import("std");
 const font_data = @import("font_data.zig");
 
@@ -64,7 +60,6 @@ pub const Fb = struct {
         }
     }
 
-    /// Outlined bar filled to `frac` (0..1).
     pub fn bar(self: *Fb, x: i32, y: i32, w: i32, h: i32, frac: f32) void {
         self.box(x, y, w, h);
         const f = std.math.clamp(frac, 0.0, 1.0);
@@ -102,7 +97,6 @@ pub const Fb = struct {
         }
     }
 
-    /// Draw text with its top-left at (x, y). Returns the x after the last glyph.
     pub fn text(self: *Fb, x: i32, y: i32, s: []const u8, size: FontSize) i32 {
         var cx = x;
         for (s) |c| {
@@ -112,7 +106,6 @@ pub const Fb = struct {
         return cx;
     }
 
-    /// Dark text on whatever is already lit (use after `fill`).
     pub fn textOff(self: *Fb, x: i32, y: i32, s: []const u8, size: FontSize) void {
         var cx = x;
         for (s) |c| {
@@ -133,7 +126,6 @@ pub const Fb = struct {
         _ = self.text(@divTrunc(W - textWidth(s, size), 2), y, s, size);
     }
 
-    /// Text in a filled box, as for headers and soft-key legends.
     pub fn textReverse(self: *Fb, x: i32, y: i32, w: i32, s: []const u8, size: FontSize) void {
         self.fill(x, y, w, glyphHeight(size), true);
         var cx = x + 1;
@@ -143,7 +135,6 @@ pub const Fb = struct {
         }
     }
 
-    /// Rotate 180 degrees into page-ordered bytes ready for the panel.
     pub fn rotated180(self: *const Fb) Fb {
         var out: Fb = .{};
         for (0..PAGES) |p| {
@@ -154,7 +145,6 @@ pub const Fb = struct {
         return out;
     }
 
-    /// '#'/'.' picture, 64 lines of 128 chars + newline, for tests and `rtkd screens`.
     pub fn ascii(self: *const Fb, out: []u8) []u8 {
         var n: usize = 0;
         for (0..H) |y| {

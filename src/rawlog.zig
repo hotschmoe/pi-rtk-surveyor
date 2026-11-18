@@ -1,7 +1,3 @@
-//! Rotating log of the raw receiver byte stream (NMEA and RTCM exactly as
-//! received). On the base this is the reference data for post-processing in
-//! RTKLIB if real-time RTK goes wrong in the field.
-
 const std = @import("std");
 const sys = @import("sys.zig");
 const log = @import("log.zig");

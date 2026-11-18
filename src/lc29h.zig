@@ -226,7 +226,7 @@ pub const Driver = struct {
             if (!std.mem.startsWith(u8, body, s.head.get())) return;
             const tail = body[s.head.len..];
             if (std.mem.eql(u8, tail, s.expect.get())) {
-                self.nextStep(now_ms, out); // already correct: leave it alone
+                self.nextStep(now_ms, out);
             } else if (s.write.len == 0) {
                 self.nextStep(now_ms, out);
             } else {
@@ -245,7 +245,7 @@ pub const Driver = struct {
             _ = it.next();
             if (!std.mem.eql(u8, it.next() orelse "", want_type)) return;
             const res = it.next() orelse "";
-            if (std.mem.eql(u8, res, "1")) return; // still processing
+            if (std.mem.eql(u8, res, "1")) return;
             if (!std.mem.eql(u8, res, "0")) self.failed_steps += 1;
             self.nextStep(now_ms, out);
         } else {

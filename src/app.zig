@@ -606,7 +606,7 @@ pub const App = struct {
                     self.saved_survey = true;
                 } else |er| {
                     log.err("base: cannot store position: {s}", .{@errorName(er)});
-                    self.saved_survey = true; // do not retry every tick
+                    self.saved_survey = true;
                 }
             };
         }

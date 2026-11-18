@@ -1,7 +1,3 @@
-//! `rtkd screens`: render every OLED page to the terminal (half-block
-//! characters, two pixel rows per text line) so layouts can be reviewed
-//! without a panel.
-
 const std = @import("std");
 const log = @import("log.zig");
 const ui = @import("ui.zig");
@@ -46,7 +42,6 @@ pub fn run() void {
         }
     }
 
-    // Rover with no sky (what both Pis show on the bench today).
     var empty = ui.Demo{};
     empty.rx.onNmea("GNGGA,000953.012,,,,,0,00,99.99,,M,,M,,", 100);
     var v = empty.view(.rover);
@@ -56,7 +51,6 @@ pub fn run() void {
     ui.draw(&fb, &v);
     show("rover / status, indoors (no fix, no base found)", &fb);
 
-    // Occupation in progress, and the saved toast.
     var v2 = d.view(.rover);
     v2.survey.occupying = true;
     v2.survey.occ_n = 8;
@@ -71,7 +65,6 @@ pub fn run() void {
     ui.draw(&fb, &v3);
     show("rover / saved", &fb);
 
-    // Base surveying in with sky, and ready.
     var bs = ui.Demo.fixed();
     bs.rx.onNmea("PQTMSVINSTATUS,1,,1,,00,412,900,,,,", 100);
     var v4 = bs.view(.base);
@@ -87,7 +80,6 @@ pub fn run() void {
     ui.draw(&fb, &v6);
     show("base / status, ready", &fb);
 
-    // Failure modes.
     var v7 = d.view(.base);
     v7.drv_state = .failed;
     v7.drv_fail = "BASE NEEDS LC29H(BS) HAT";

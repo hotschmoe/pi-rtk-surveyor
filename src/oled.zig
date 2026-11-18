@@ -1,9 +1,3 @@
-//! Waveshare 1.3" OLED HAT: SH1106 128x64 on SPI0 CE0, D/C = GPIO24, RST = GPIO25.
-//!
-//! The panel has 132 RAM columns with the 128 visible ones starting at column
-//! 2. Orientation follows the previous implementation's finding (luma
-//! rotate=2): standard A1/C8 scan setup, image rotated 180 degrees in software.
-
 const std = @import("std");
 const linux = std.os.linux;
 const sys = @import("sys.zig");
@@ -23,7 +17,6 @@ pub const Oled = struct {
     ctl: gpio.Lines,
     rotate: bool,
     shown: Fb = .{},
-    /// False until the first flush so the whole panel is written once.
     valid: bool = false,
 
     pub fn open(spi_path: []const u8, chip: []const u8, rotate: bool, contrast: u8) sys.Error!Oled {
@@ -35,7 +28,6 @@ pub const Oled = struct {
         _ = try sys.ioctl(spi, SPI_WR_MODE, @intFromPtr(&mode));
         _ = try sys.ioctl(spi, SPI_WR_BITS, @intFromPtr(&bits));
         _ = try sys.ioctl(spi, SPI_WR_SPEED, @intFromPtr(&speed));
-        // index 0 = DC, index 1 = RST; RST starts high (not in reset).
         const ctl = try gpio.Lines.outputs(chip, &.{ pin_dc, pin_rst }, 0b10, "rtkd-oled");
         var o = Oled{ .spi = spi, .ctl = ctl, .rotate = rotate };
         try o.reset();
@@ -92,7 +84,6 @@ pub const Oled = struct {
         try sys.writeAll(self.spi, bytes);
     }
 
-    /// Push `fb` to the panel; only pages that changed are sent.
     pub fn flush(self: *Oled, fb: *const Fb) sys.Error!void {
         const img = if (self.rotate) fb.rotated180() else fb.*;
         for (0..fb_mod.PAGES) |p| {

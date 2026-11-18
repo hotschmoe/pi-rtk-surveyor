@@ -1,12 +1,3 @@
-//! OLED screens. Pure: a `View` snapshot in, pixels out.
-//!
-//! Layout rules (deliberately terminal-like, in the manner of a 1970s
-//! operator console):
-//!   - row 0: reversed header with role, unit name and clock
-//!   - body: 25-column small font, one fact per line, units always shown
-//!   - bottom: soft-key legend, K1 K2 K3, always showing what the keys do now
-//!   - "inverted" always means "good / locked"; errors get a code and a remedy
-
 const std = @import("std");
 const fb_mod = @import("fb.zig");
 const Fb = fb_mod.Fb;
@@ -43,7 +34,6 @@ pub const LinkView = struct {
 
 pub const BaseSeen = struct {
     id: ?u16 = null,
-    /// Satellites in the base's latest MSM per system: GPS, GLO, GAL, BDS, QZS.
     sats: [5]u8 = .{ 0, 0, 0, 0, 0 },
     baseline_m: ?f64 = null,
     pos_known: bool = false,
@@ -61,11 +51,9 @@ pub const CasterView = struct {
 pub const BaseView = struct {
     pos: ?geo.Llh = null,
     ecef: ?[3]f64 = null,
-    /// Position came from a stored survey rather than a fresh one this session.
     from_store: bool = false,
     surveyed_unix: i64 = 0,
     acc_m: f32 = 0,
-    /// Waiting for a second press of K3 to restart the survey.
     confirm_resurvey: bool = false,
 };
 
@@ -141,7 +129,6 @@ fn header(fb: *Fb, v: *const View) void {
     var b: [32]u8 = undefined;
     const left = std.fmt.bufPrint(&b, " {s} {s}", .{ if (v.role == .rover) "ROVER" else "BASE", v.name }) catch "";
     fb.textOff(0, 1, left, .small);
-    // Page dots, right-aligned: the current page is a filled square.
     const n: i32 = @intCast(v.page_count);
     var x: i32 = 128 - 3 - n * 7;
     var i: i32 = 0;
@@ -207,8 +194,6 @@ fn bringUp(fb: *Fb, v: *const View) void {
     put(fb, 0, rowY(4), "KEYS  K1 K2 K3 READY", .{});
     put(fb, 0, rowY(5), "rtkd {s}", .{v.version});
 }
-
-// ---- rover pages ------------------------------------------------------------------------------------
 
 fn roverStatus(fb: *Fb, v: *const View) void {
     const q = v.rx.liveQuality(v.now_ms);
@@ -312,8 +297,6 @@ fn occupying(fb: *Fb, v: *const View) void {
     legend(fb, "", "CANCEL", "ACCEPT");
 }
 
-// ---- base pages --------------------------------------------------------------------------------------------
-
 fn baseStatus(fb: *Fb, v: *const View) void {
     const sv = v.rx.svin;
     const done = (sv != null and sv.?.state == 2) or v.base.from_store;
@@ -365,8 +348,6 @@ fn baseCaster(fb: *Fb, v: *const View) void {
     put(fb, 0, rowY(4), "BEACON on (rovers find me)", .{});
 }
 
-// ---- shared pages -------------------------------------------------------------------------------------------------
-
 fn systemPage(fb: *Fb, v: *const View) void {
     const s = v.sysinfo;
     var t: [12]u8 = undefined;
@@ -397,7 +378,6 @@ fn toastPanel(fb: *Fb, t: Toast) void {
     _ = fb.text(2, 38, t.l3, .small);
 }
 
-/// Pick the legend text for the current page.
 fn pageLegend(fb: *Fb, v: *const View) void {
     switch (v.page) {
         .status => if (v.role == .rover) legend(fb, "PAGE", "", "MARK") else legend(fb, "PAGE", "", "RESURV"),
@@ -428,8 +408,6 @@ pub fn draw(fb: *Fb, v: *const View) void {
     }
     if (!(v.page == .status and v.role == .base and v.base.confirm_resurvey)) pageLegend(fb, v);
 }
-
-// ---- demo data and tests ------------------------------------------------------------------------------------------------
 
 pub const Demo = struct {
     rx: rx_mod.Rx = .{},

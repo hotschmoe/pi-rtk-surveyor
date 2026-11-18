@@ -1,5 +1,3 @@
-//! GNSS serial port: raw 8N1, non-blocking.
-
 const std = @import("std");
 const linux = std.os.linux;
 const sys = @import("sys.zig");

@@ -1,7 +1,3 @@
-//! Thin, error-typed layer over raw Linux syscalls. rtkd talks to the kernel
-//! directly (no libc, no std.Io) so the daemon is one static binary with
-//! behaviour that is easy to reason about: one epoll loop, no threads.
-
 const std = @import("std");
 const linux = std.os.linux;
 
@@ -24,7 +20,6 @@ pub const Error = error{
     Unexpected,
 };
 
-/// errno of the most recent failed call, for log lines.
 pub var last_errno: u32 = 0;
 
 pub fn check(rc: usize) Error!usize {
@@ -55,7 +50,6 @@ pub const Fd = i32;
 
 const path_max = 512;
 
-/// Copy `path` into a stack buffer with a terminating NUL.
 fn Z(buf: *[path_max]u8, path: []const u8) Error![*:0]const u8 {
     if (path.len >= path_max) return error.InvalidArgument;
     @memcpy(buf[0..path.len], path);
@@ -84,7 +78,6 @@ pub fn read(fd: Fd, buf: []u8) Error!usize {
     }
 }
 
-/// One write(2); may be short. For sockets and non-blocking descriptors.
 pub fn write(fd: Fd, data: []const u8) Error!usize {
     while (true) {
         return check(linux.write(fd, data.ptr, data.len)) catch |e| switch (e) {
@@ -94,7 +87,6 @@ pub fn write(fd: Fd, data: []const u8) Error!usize {
     }
 }
 
-/// Write everything to a blocking descriptor (files, SPI).
 pub fn writeAll(fd: Fd, data: []const u8) Error!void {
     var off: usize = 0;
     while (off < data.len) off += try write(fd, data[off..]);
@@ -118,7 +110,6 @@ pub fn monotonicMs() u64 {
     return monotonicNs() / 1_000_000;
 }
 
-/// Wall clock, seconds since the Unix epoch (may be wrong on a Pi with no RTC until NTP/GNSS).
 pub fn realtimeSec() i64 {
     var ts: linux.timespec = undefined;
     _ = linux.clock_gettime(.REALTIME, &ts);
@@ -159,7 +150,6 @@ pub fn exists(path: []const u8) bool {
     return true;
 }
 
-/// Read a small file (sysfs/procfs, config) into `buf`. Returns the bytes read.
 pub fn readFile(path: []const u8, buf: []u8) Error![]u8 {
     const fd = try open(path, .{}, 0);
     defer close(fd);
@@ -177,7 +167,6 @@ pub fn fileSize(fd: Fd) u64 {
     return if (linux.errno(r) == .SUCCESS) r else 0;
 }
 
-/// Atomically replace `path` with `data` (write temp, fsync, rename).
 pub fn writeFileAtomic(path: []const u8, data: []const u8) Error!void {
     var tmp: [path_max]u8 = undefined;
     const t = std.fmt.bufPrint(&tmp, "{s}.tmp", .{path}) catch return error.InvalidArgument;
@@ -190,8 +179,6 @@ pub fn writeFileAtomic(path: []const u8, data: []const u8) Error!void {
     }
     try rename(t, path);
 }
-
-// ---- epoll / timers / signals -------------------------------------------------
 
 pub const Event = linux.epoll_event;
 pub const IN: u32 = linux.EPOLL.IN;
@@ -230,7 +217,6 @@ pub const Epoll = struct {
     }
 };
 
-/// Periodic timer; read(8 bytes) to acknowledge.
 pub fn timerfd(interval_ms: u32) Error!Fd {
     const fd: Fd = @intCast(try check(linux.timerfd_create(.MONOTONIC, .{ .NONBLOCK = true, .CLOEXEC = true })));
     const secs: isize = @intCast(interval_ms / 1000);
@@ -248,7 +234,6 @@ pub fn drainTimer(fd: Fd) void {
     _ = linux.read(fd, &b, 8);
 }
 
-/// Block SIGINT/SIGTERM and return a descriptor that reports them.
 pub fn shutdownSignalFd() Error!Fd {
     var set = linux.sigemptyset();
     linux.sigaddset(&set, .INT);
@@ -257,14 +242,11 @@ pub fn shutdownSignalFd() Error!Fd {
     return @intCast(try check(linux.signalfd(-1, &set, linux.SFD.NONBLOCK | linux.SFD.CLOEXEC)));
 }
 
-// ---- tests ------------------------------------------------------------------------
-
 pub fn sleepMs(ms: u32) void {
     const ts = linux.timespec{ .sec = @intCast(ms / 1000), .nsec = @intCast((ms % 1000) * 1_000_000) };
     _ = linux.nanosleep(&ts, null);
 }
 
-/// Call `ctx.entry(name)` for every directory entry except "." and "..".
 pub fn forEachEntry(path: []const u8, ctx: anytype) Error!void {
     const fd = try open(path, .{ .DIRECTORY = true }, 0);
     defer close(fd);

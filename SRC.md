@@ -129,3 +129,52 @@ memory never grows, so exported pointers remain valid for the instance lifetime.
 contains lat0, lon0, min/max x and y, min/max elevation, spacing, max edge, and the valid, unique
 and triangle counts, in that order. Plan colours are packed as `0xRRGGBB`; 3D triangles and their
 colours are returned in back-to-front order.
+
+## src/fb.zig
+
+The framebuffer uses SSD1306/SH1106 page layout: eight 128-byte pages, bit zero at the top of each
+page. Panel rotation is performed in software.
+
+## src/gpio.zig
+
+The GPIO uAPI v2 layouts follow Linux `gpio.h`; their sizes are asserted at compile time. Event
+reads must not block the daemon's event loop.
+
+## src/log.zig
+
+When stderr is not a terminal, log lines carry syslog priority prefixes for journald; terminal output
+uses monotonic timestamps.
+
+## src/main.zig
+
+Panic and segmentation fault stack-trace machinery is omitted to avoid substantial binary and
+signal-stack cost on a stripped daemon. Systemd restarts the service after a panic.
+
+## src/oled.zig
+
+The SH1106 panel has 132 RAM columns, with the 128 visible columns starting at column two. It uses
+A1/C8 scan setup and software rotation. The first flush must write the whole panel.
+
+## src/rawlog.zig
+
+Raw base logs retain receiver bytes for RTKLIB post-processing if real-time RTK fails.
+
+## src/selftest.zig
+
+Selftest opens the UART and display directly; stop the service before running it on a unit.
+
+## src/sys.zig
+
+The syscall layer is libc-free. Socket writes may be short; file and SPI writes need the write-all
+path. Wall-clock time may be wrong until the Pi receives GNSS or NTP time. Atomic replacement
+writes a temporary file, syncs it and renames it.
+
+## src/sysinfo.zig
+
+Raspberry Pi OS reports under-voltage through the `rpi_volt` hwmon device; bit zero means
+under-voltage is currently flagged. Missing procfs and sysfs values remain absent.
+
+## src/ui.zig
+
+The display uses a reversed header, a 25-column body and a bottom soft-key legend. Inversion means
+good or locked; errors include a code and a remedy.
