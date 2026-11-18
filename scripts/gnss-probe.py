@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""Bring-up probe for the LC29H on a Pi: try bauds, send PQTMVERNO, print replies.
-
-Runs ON the Pi (stdlib only, so it works on a fresh card). Stop rtkd first.
-  usage: gnss-probe.py [device] [baud ...]
-"""
 import os, sys, time, termios, select
 
 DEV = sys.argv[1] if len(sys.argv) > 1 else "/dev/serial0"

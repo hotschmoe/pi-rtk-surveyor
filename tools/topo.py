@@ -26,13 +26,11 @@ import argparse, csv, datetime, math, os, sys
 
 import numpy as np
 
-# ---- projection ---------------------------------------------------------------------------------
 
 A_WGS = 6378137.0
 F_WGS = 1 / 298.257223563
 
 def utm(lat, lon, zone=None):
-    """WGS-84 lat/lon degrees -> (zone, northern?, easting, northing), Krueger series."""
     if zone is None:
         zone = int((lon + 180) // 6) + 1
     lon0 = math.radians((zone - 1) * 6 - 180 + 3)
@@ -57,7 +55,6 @@ def utm(lat, lon, zone=None):
     N = k0 * AA * N + (0.0 if lat >= 0 else 10000000.0)
     return zone, lat >= 0, E, N
 
-# ---- input ------------------------------------------------------------------------------------------
 
 class Point:
     def __init__(self, row):
@@ -82,10 +79,8 @@ def read_points(paths, fixed_only):
                 pts.append(pt)
     return pts
 
-# ---- geometry helpers ------------------------------------------------------------------------------------
 
 def nice_step(x):
-    """A 1-2-2.5-5 step at or above x."""
     e = 10 ** math.floor(math.log10(x))
     for m in (1, 2, 2.5, 5, 10):
         if m * e >= x:
@@ -102,7 +97,6 @@ def nice_scale(extent_m, paper_m):
 def build_tin(x, y, max_edge):
     import matplotlib.tri as mtri
     tri = mtri.Triangulation(x, y)
-    # Remove skinny and over-long hull triangles.
     pts = np.column_stack([x, y])
     mask = np.zeros(len(tri.triangles), dtype=bool)
     for i, t in enumerate(tri.triangles):
@@ -117,7 +111,6 @@ def build_tin(x, y, max_edge):
     return tri
 
 def contours(tri, z, levels):
-    """-> {level: [Nx2 arrays]} using matplotlib's TIN contouring."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -129,7 +122,6 @@ def contours(tri, z, levels):
     plt.close(fig)
     return out
 
-# ---- DXF (R12) --------------------------------------------------------------------------------------------------
 
 class Dxf:
     LAYERS = {  # name: ACI colour
@@ -156,7 +148,6 @@ class Dxf:
                   (11, "%.4f" % x1), (21, "%.4f" % y1), (31, "0.0"))
 
     def face(self, layer, a, b, c):
-        """3DFACE (triangle: the fourth corner repeats the third)."""
         self._add((0, "3DFACE"), (8, layer))
         for n, v in enumerate((a, b, c, c)):
             self._add((10 + n, "%.4f" % v[0]), (20 + n, "%.4f" % v[1]), (30 + n, "%.4f" % v[2]))
@@ -176,7 +167,6 @@ class Dxf:
         s = "\n".join("%3d\n%s" % (c, v) for c, v in head)
         return s + "\n" + "\n".join(self.ent) + "\n  0\nENDSEC\n  0\nEOF\n"
 
-# ---- main ---------------------------------------------------------------------------------------------------------
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -219,7 +209,6 @@ def main(argv=None):
     scale = nice_scale(ext, paper)
     th = 2.5e-3 * scale  # 2.5 mm text at plot scale
 
-    # ---- local origin ----
     if a.origin:
         ox, oy = [float(v) for v in a.origin.split(",")]
     else:
@@ -230,7 +219,6 @@ def main(argv=None):
     today = datetime.date.today().isoformat()
     tris = [t for t in tri.get_masked_triangles()]
 
-    # ---- DXF (UTM and local) ----
     def build_dxf(sx, sy):
         dx = Dxf()
         for p, px, py in zip(pts, x, y):
@@ -266,7 +254,6 @@ def main(argv=None):
     with open(a.out + "_local.dxf", "w") as fh:
         fh.write(build_dxf(ox, oy))
 
-    # ---- ArchiCAD / generic X Y Z point files ----
     order = sorted(range(len(pts)), key=lambda i: (len(pts[i].id), pts[i].id))
     with open(a.out + "_xyz_local.txt", "w") as fh:
         for i in order:
@@ -280,7 +267,6 @@ def main(argv=None):
                  "Files *_local.* and *_xyz_local.txt use local coordinates; *.dxf (no _local) and *_xyz_utm.txt use UTM.\n"
                  % (zone, "N" if north_hemi else "S", ox, oy))
 
-    # ---- OBJ mesh of the TIN (local metres) ----
     with open(a.out + ".obj", "w") as fh:
         fh.write("# rtkd TIN surface, local metres (origin E%.3f N%.3f, %s). Units: metres.\n" % (ox, oy, "UTM %d%s" % (zone, "N" if north_hemi else "S")))
         for i in range(len(pts)):
@@ -288,7 +274,6 @@ def main(argv=None):
         for t in tris:
             fh.write("f %d %d %d\n" % (t[0] + 1, t[1] + 1, t[2] + 1))
 
-    # ---- standalone HTML viewer ----
     import json
     viewer_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src", "viewer.html")
     gj = {"type": "FeatureCollection", "title": a.title, "features": [
@@ -297,8 +282,6 @@ def main(argv=None):
     with open(viewer_path) as fh:
         page = fh.read()
     page = page.replace("window.RTK_DATA = null;", "window.RTK_DATA = " + json.dumps(gj).replace("</", "<\\/") + ";", 1)
-    # The WebAssembly geometry core goes in as base64 so the export stays ONE offline file. If it is
-    # missing the page still works: it falls back to the JavaScript implementation (slower on big jobs).
     wasm_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src", "map.wasm")
     if os.path.exists(wasm_path):
         import base64
@@ -307,13 +290,11 @@ def main(argv=None):
     with open(a.out + ".html", "w") as fh:
         fh.write(page)
 
-    # ---- PNEZD ----
     with open(a.out + "_pnezd.csv", "w", newline="") as f:
         w = csv.writer(f)
         for p, px, py in zip(pts, x, y):
             w.writerow([p.id.lstrip("0") or "0", "%.3f" % py, "%.3f" % px, "%.3f" % p.z, p.code])
 
-    # ---- sheet ----
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -344,17 +325,14 @@ def main(argv=None):
     for p, px, py in zip(pts, x, y):
         ax.annotate("%s\n%.2f" % (p.id.lstrip("0") or "0", p.z) + ("\n" + p.code if p.code != "PT" else ""),
                     (px, py), xytext=(3, 3), textcoords="offset points", fontsize=5.5, zorder=6)
-    # north arrow (axes coordinates)
     ax.annotate("", xy=(0.965, 0.95), xytext=(0.965, 0.87), xycoords="axes fraction",
                 arrowprops=dict(arrowstyle="-|>", lw=1.2, color="black"))
     ax.text(0.965, 0.96, "N", transform=ax.transAxes, ha="center", fontsize=11, weight="bold")
-    # scale bar
     bar = nice_step(ext / 5)
     bx, by = x0 + 0.03 * (x1 - x0), y0 + 0.04 * (y1 - y0)
     ax.plot([bx, bx + bar], [by, by], color="black", lw=3, solid_capstyle="butt", zorder=7)
     ax.text(bx, by + 0.012 * (y1 - y0), "0", fontsize=7, ha="center")
     ax.text(bx + bar, by + 0.012 * (y1 - y0), "%g m" % bar, fontsize=7, ha="center")
-    # title block
     hacc = np.array([p.hacc for p in pts])
     fig.text(0.07, 0.115, a.title, fontsize=15, weight="bold")
     fig.text(0.07, 0.085, "WGS84 / UTM zone %d%s   |   %d points (%d RTK fixed)   |   contour interval %g m (major %g m)   |   plot scale 1:%d at %s"

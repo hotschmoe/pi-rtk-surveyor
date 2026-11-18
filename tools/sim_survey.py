@@ -1,13 +1,4 @@
 #!/usr/bin/env python3
-"""Survey a synthetic site through the real rtkd stack, then draw it.
-
-Runs the same base + rover + simulated receivers as tools/e2e_sim.py, walks the
-rover over a made-up 200 m x 200 m site (a slope, a hill, a swale, fence line,
-building corners, trees), marks each point through the web API exactly as an
-operator would, and writes the job CSV. Then runs tools/topo.py on it.
-
-  usage: tools/sim_survey.py [path/to/rtkd] [out_prefix]
-"""
 import math, os, shutil, subprocess, sys, time
 sys.argv = [sys.argv[0]] + sys.argv[1:]
 import e2e_sim as e

@@ -178,3 +178,41 @@ under-voltage is currently flagged. Missing procfs and sysfs values remain absen
 
 The display uses a reversed header, a 25-column body and a bottom soft-key legend. Inversion means
 good or locked; errors include a code and a remedy.
+
+## src/viewer.html
+
+The JavaScript fallback uses a large super-triangle to avoid losing nearly collinear hull triangles,
+cross products to retain precision on slivers, and canonical edge ordering for matching contour
+intersections. The backend accepts longitude, latitude, elevation rows and returns local metres,
+triangle indices, contour lines, colours and back-to-front projected triangles. WebAssembly output
+views are valid until the next call. The JS fallback is automatic when WebAssembly is unavailable and
+can be forced with `?nowasm`.
+
+## tools/gnss-sim.py
+
+The rover's fix is derived from received corrections: no corrections means SINGLE, six seconds of
+corrections precede FIX, and ten seconds without corrections returns to SINGLE. Position files hold
+latitude, longitude, MSL altitude and optional geoid separation in degrees and metres.
+
+## tools/genfont.py
+
+The generator requires Pillow and xfonts-base. It reads public-domain X11 misc-fixed bitmap fonts;
+FreeType's size selects a bitmap strike. Generated columns use bit zero for the top row.
+
+## tools/sim_survey.py
+
+Synthetic site heights represent ground MSL; the simulated antenna is two metres above ground.
+
+## tools/topo.py
+
+Offline exports embed WebAssembly as base64 and fall back to JavaScript if it is absent. The module
+docstring supplies `--help` and must remain available to argparse.
+
+## scripts/gnss-probe.py
+
+The probe operates directly on the Pi's UART; stop the daemon before use.
+
+## scripts/gnss-cmd.py
+
+The command tool operates directly on the Pi's UART; stop the daemon before use. Command bodies
+exclude NMEA framing and checksum.

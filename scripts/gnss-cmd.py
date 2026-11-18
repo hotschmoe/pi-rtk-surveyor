@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""Send NMEA command bodies to the LC29H and print the reply lines. Runs ON the Pi.
-Stop rtkd first. Bodies are given without '$' and checksum.
-  usage: gnss-cmd.py [-d dev] [-b baud] [-t secs] BODY [BODY ...]
-  e.g.   gnss-cmd.py PQTMVERNO PQTMCFGSVIN,R
-"""
 import os, sys, time, termios, select, argparse
 
 def nmea(body):

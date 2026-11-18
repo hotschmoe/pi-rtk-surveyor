@@ -45,7 +45,6 @@ canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor
 </div>
 <script>window.RTK_DATA = null;/*INLINE_DATA*/ window.RTK_WASM = null;/*INLINE_WASM*/</script>
 <script>
-// ==== geometry (testable; extracted by tools/test_viewer.js) ====
 function llToLocal(features) {
   const f = features.filter(x => x.geometry && x.geometry.type === 'Point');
   if (!f.length) return { pts: [], lat0: 0, lon0: 0 };
@@ -69,7 +68,6 @@ function niceStep(x) {
   return 10 * e;
 }
 
-// Bowyer-Watson Delaunay triangulation of {x,y} points. Returns [[i,j,k], ...] (indices into P).
 function delaunay(P) {
   const n = P.length;
   if (n < 3) return [];
@@ -77,7 +75,6 @@ function delaunay(P) {
   for (const p of P) { minx = Math.min(minx, p.x); maxx = Math.max(maxx, p.x); miny = Math.min(miny, p.y); maxy = Math.max(maxy, p.y); }
   const d = Math.max(maxx - minx, maxy - miny, 1), mx = (minx + maxx) / 2, my = (miny + maxy) / 2;
   const V = P.map(p => ({ x: p.x, y: p.y }));
-  // A very large super-triangle: a small one swallows near-collinear hull triangles (huge circumcircles).
   const K = 1000;
   V.push({ x: mx - K * d, y: my - d }, { x: mx, y: my + K * d }, { x: mx + K * d, y: my - d });
   const mk = (a, b, c) => {
@@ -105,7 +102,6 @@ function delaunay(P) {
   return T.filter(t => t.a < n && t.b < n && t.c < n).map(t => [t.a, t.b, t.c]);
 }
 
-// Delaunay on de-duplicated points (identical positions would break the circumcircles).
 function buildTin(pts) {
   const seen = new Map(), idx = [], uniq = [];
   pts.forEach((p, i) => {
@@ -113,14 +109,12 @@ function buildTin(pts) {
     if (!seen.has(k)) { seen.set(k, i); idx.push(i); uniq.push(p); }
   });
   const tris = delaunay(uniq).map(t => t.map(j => idx[j]));
-  // nearest-neighbour spacing sets how long an edge may be before it is "across empty ground"
   const nn = uniq.map((p, i) => { let b = Infinity; for (let j = 0; j < uniq.length; j++) if (j !== i) b = Math.min(b, Math.hypot(p.x - uniq[j].x, p.y - uniq[j].y)); return b; }).filter(isFinite).sort((a, b) => a - b);
   const spacing = nn.length ? nn[nn.length >> 1] : 0;
   const maxEdge = Math.max(15, 2.5 * spacing);
   const good = tris.filter(([a, b, c]) => {
     const A = pts[a], B = pts[b], C = pts[c];
     const e = [Math.hypot(A.x - B.x, A.y - B.y), Math.hypot(B.x - C.x, B.y - C.y), Math.hypot(C.x - A.x, C.y - A.y)];
-    // area from the cross product: Heron's formula loses all precision on slivers
     const s = (e[0] + e[1] + e[2]) / 2, area = Math.abs((B.x - A.x) * (C.y - A.y) - (C.x - A.x) * (B.y - A.y)) / 2;
     if (Math.max(...e) > maxEdge || area < 1e-6) return false;
     const circ = e[0] * e[1] * e[2] / (4 * area), inr = area / s;
@@ -129,11 +123,9 @@ function buildTin(pts) {
   return { tris: good, maxEdge, spacing };
 }
 
-// Contour polylines of the TIN at `level`: [[ [x,y], ... ], ...]
 function contourLines(pts, tris, level) {
   const segs = [], L = level;
   const cross = (i, j) => {
-    // Canonical order, so the two triangles sharing an edge compute bit-identical points.
     const lo = Math.min(i, j), hi = Math.max(i, j), a = pts[lo], b = pts[hi], t = (L - a.z) / (b.z - a.z);
     return { k: lo + '-' + hi, x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) };
   };
@@ -159,17 +151,10 @@ function contourLines(pts, tris, level) {
     }
     return line.map(p => [p.x, p.y]);
   };
-  // open lines first (start at an endpoint used once), then closed loops
   segs.forEach((s, n) => { if (used[n]) return; for (const p of s) if (adj.get(p.k).length === 1) { lines.push(walk(n, p)); return; } });
   segs.forEach((s, n) => { if (!used[n]) lines.push(walk(n, s[0])); });
   return lines;
 }
-// ---- backends: the same interface over the pure-JS reference above and over the Zig/WebAssembly core ----
-// load(ll, n): ll is a Float64Array of n rows [lon, lat, elevation]. Returns
-//   { n, pts: Float64Array(3n) local x,y,z, tris: Uint32Array(3m), lat0, lon0, spacing, maxEdge, bbox, zmin, zmax }
-// contours([[z, major], ...]) -> [{ z, major, xy: Float64Array }]; tint2d(zmin, zmax) -> Uint32Array 0xRRGGBB per triangle;
-// prep3d(view) -> { scr, ord, col } (screen x,y,depth per point; triangles back to front with shaded colours);
-// nearest(sx, sy, cx, cy, sc, w, h, maxd) -> index or -1.
 const RAMP = ['#2e7d4f', '#9bc17a', '#e8dba0', '#c9a26b', '#8c5a3c'];
 function tintRgb(t) {
   const hx = h => [1, 3, 5].map(i => parseInt(h.substr(i, 2), 16));
@@ -235,7 +220,6 @@ const jsGeo = {
   },
 };
 
-// The WebAssembly core (src/geom, built to src/map.wasm). `inst` is an instantiated module.
 function makeWasmGeo(inst) {
   const X = inst.exports, cap = X.max_points();
   const f64 = (p, n) => new Float64Array(X.memory.buffer, p, n), u32 = (p, n) => new Uint32Array(X.memory.buffer, p, n);
@@ -277,9 +261,7 @@ async function loadWasmGeo(b64, url) {
   const { instance } = await WebAssembly.instantiate(bytes, {});
   return makeWasmGeo(instance);
 }
-// ==== end geometry ====
 
-// ---------------------------------------------------------------- UI
 const $ = id => document.getElementById(id);
 const cv = $('cv'), ctx = cv.getContext('2d');
 let S = { pts: [], tris: new Uint32Array(0), mode: '2d', zmin: 0, zmax: 1, interval: 1, cx: 0, cy: 0, sc: 1, yaw: 0.6, pitch: 0.9, ex: 2, hover: -1, lat0: 0, lon0: 0, title: 'RTK map', contours: [], geo: jsGeo, tintCss: [], tinMs: 0, info: null };
@@ -352,9 +334,7 @@ function fit() {
   draw();
 }
 
-// plan: world (x east, y north) -> screen
 function P2(x, y, w, h) { return [w / 2 + (x - S.cx) * S.sc, h / 2 - (y - S.cy) * S.sc]; }
-// 3D: orthographic, z scaled by exaggeration (points and triangles are projected by the geometry core; this is for contours)
 function P3(x, y, z, w, h) {
   const X = x - S.cx, Y = y - S.cy, Z = (z - (S.zmin + S.zmax) / 2) * S.ex;
   const cyaw = Math.cos(S.yaw), syaw = Math.sin(S.yaw), cp = Math.cos(S.pitch), sp = Math.sin(S.pitch);
@@ -427,12 +407,10 @@ function drawPoints2D(w, h) {
 }
 
 function furniture(w, h) {
-  // north arrow (plan view is always north-up)
   ctx.strokeStyle = css('--ink'); ctx.fillStyle = css('--ink'); ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.moveTo(w - 30, 70); ctx.lineTo(w - 30, 32); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(w - 30, 28); ctx.lineTo(w - 35, 40); ctx.lineTo(w - 25, 40); ctx.closePath(); ctx.fill();
   ctx.font = 'bold 12px system-ui'; ctx.textAlign = 'center'; ctx.fillText('N', w - 30, 82);
-  // scale bar
   const m = niceStep(90 / S.sc), px = m * S.sc;
   ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(12, h - 60); ctx.lineTo(12 + px, h - 60); ctx.stroke();
   ctx.font = '11px system-ui'; ctx.textAlign = 'left'; ctx.fillText(m + ' m', 12, h - 66);
@@ -459,7 +437,6 @@ function draw3D(w, h) {
   ctx.fillText('drag to rotate · wheel to zoom · vertical exaggeration x' + S.ex, 12, h - 66);
 }
 
-// ---------------------------------------------------------------- interaction
 function setMode(m) { S.mode = m; $('b2d').classList.toggle('on', m === '2d'); $('b3d').classList.toggle('on', m === '3d'); $('exl').style.display = m === '3d' ? '' : 'none'; draw(); }
 $('b2d').onclick = () => setMode('2d'); $('b3d').onclick = () => setMode('3d');
 for (const id of ['cTint', 'cCont', 'cTin', 'cPts', 'cLab']) $(id).onchange = draw;
@@ -495,7 +472,6 @@ cv.ontouchstart = e => { if (e.touches.length === 2) pinch = Math.hypot(e.touche
 cv.ontouchmove = e => { if (e.touches.length === 2 && pinch) { const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); S.sc *= d / pinch; pinch = d; draw(); } };
 cv.ontouchend = () => { pinch = null; };
 
-// ---------------------------------------------------------------- start
 function applyHash() {
   const h = new URLSearchParams(location.hash.slice(1));
   if (h.has('3d')) setMode('3d');
@@ -510,8 +486,6 @@ async function start() {
   S.title = job || (gj && gj.title) || 'current job';
   $('title').textContent = (gj && gj.title) || ('RTK map · ' + S.title);
   document.title = $('title').textContent;
-  // WebAssembly geometry core when available (embedded in exported files, /map.wasm on the unit);
-  // the pure-JavaScript implementation above is the automatic fallback (also forced by ?nowasm).
   const wasmP = (q.has('nowasm') || typeof WebAssembly !== 'object') ? Promise.resolve(null)
     : loadWasmGeo(window.RTK_WASM, '/map.wasm').catch(e => { console.warn('WebAssembly core unavailable, using JavaScript:', e); return null; });
   if (!gj) {

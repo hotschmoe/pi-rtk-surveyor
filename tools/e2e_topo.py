@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Exercise the offline map exporter through its command line."""
 import csv
 import os
 from pathlib import Path

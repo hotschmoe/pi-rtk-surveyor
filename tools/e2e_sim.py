@@ -1,13 +1,4 @@
 #!/usr/bin/env python3
-"""End-to-end test of rtkd with simulated receivers: no hardware, no sky.
-
-Runs a base rtkd and a rover rtkd on this machine, each attached to a
-tools/gnss-sim.py receiver on a pty, joined over loopback exactly as two Pis
-are over Wi-Fi (caster + beacon discovery, NTRIP, RTCM3). Then it surveys
-points through the web API and checks the files that come out.
-
-  usage: tools/e2e_sim.py [path/to/rtkd]      (default zig-out/bin/rtkd)
-"""
 import json, math, os, shutil, signal, subprocess, sys, tempfile, time, urllib.request, urllib.error
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

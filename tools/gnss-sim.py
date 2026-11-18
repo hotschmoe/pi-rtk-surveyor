@@ -1,20 +1,4 @@
 #!/usr/bin/env python3
-"""Simulated Quectel LC29H on a pseudo-terminal, for testing rtkd with no sky.
-
-It speaks the command set and reply formats captured from real LC29H(BS) and
-LC29H(DA) HATs (see src/lc29h.zig), and plays the receiver's behaviour:
-
-  rover: NMEA at 1 Hz. Fix quality is *derived from the RTCM3 corrections it
-         actually receives on its input*: none -> SINGLE, then RTK FLOAT for 6 s,
-         then RTK FIXED. If corrections stop for 10 s it falls back to SINGLE.
-  base:  survey-in progress ($PQTMSVINSTATUS) to completion, then RTCM3
-         1005 + MSM4 frames at 1 Hz carrying the surveyed position.
-
-Position comes from a file that tests rewrite to "walk" the rover:
-    lat lon alt_msl [geoid_sep]      (degrees, metres)
-
-  usage: gnss-sim.py --role rover|base --link PATH [--pos FILE] [--time-scale N]
-"""
 import argparse, math, os, pty, random, select, struct, sys, time, tty
 
 A = 6378137.0
@@ -102,7 +86,6 @@ class Sim:
         self.version = "LC29HBSNR11A01S" if self.role == "base" else "LC29HDANR11A03S_RSA"
         self.ver_date = "2023/02/13,10:14:06" if self.role == "base" else "2024/03/19,13:55:31"
 
-    # ---- input --------------------------------------------------------------------------------
     def feed(self, data):
         self.buf += data
         while self.buf:
@@ -182,7 +165,6 @@ class Sim:
             say("PAIR001,%s,0" % h[4:])
         self.out_queue = getattr(self, "out_queue", b"") + b"".join(out)
 
-    # ---- epochs --------------------------------------------------------------------------------------
     def load_pos(self):
         if not self.pos_file: return
         try:
@@ -261,7 +243,6 @@ class Sim:
             state = 2
             if self.svin_rate:
                 out += nmea("PQTMSVINSTATUS,1,,2,,00,0,0,%.4f,%.4f,%.4f,0.00" % (fx, fy, fz))
-        # RTCM: station position (surveyed, fixed, or the pole placeholder before there is one)
         tow = int(time.time() * 1000) % 604800000
         if state == 2:
             pos = self.svin_ecef if m == 1 else (fx, fy, fz)
