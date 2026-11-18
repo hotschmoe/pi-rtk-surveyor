@@ -29,7 +29,7 @@ concrete buildings, antennas a few metres apart) and the whole chain worked.
 | RTK fix, survey-in completion, point capture | **on hardware, outdoors:** rover went float to RTK FIX (5 mm estimated error, 29 satellites) through the real corrections link; the base survey-in completed and stored its position; two points marked on the same spot agreed to 9 mm horizontally and vertically. Absolute accuracy and open-field performance not yet measured |
 | Web status/downloads, phone MARK | tests + on hardware (status pages); MARK via the simulator |
 | Keypad power-off (K1+K3) | logic and unit files verified; **not triggered** on hardware |
-| Topo sheet and exports (PNG/PDF/SVG, DXF, ArchiCAD XYZ, OBJ, PNEZD, interactive HTML) | a full simulated site (`examples/`); the in-browser viewer was previously checked with Node (geometry) and headless Chromium (rendering). **ArchiCAD import itself not tested** (no ArchiCAD here) |
+| Topo sheet and exports (PNG/PDF/SVG, DXF, ArchiCAD XYZ, OBJ, PNEZD, interactive HTML) | a full simulated site CSV (`examples/`); the in-browser viewer was previously checked with Node (geometry) and headless Chromium (rendering). **ArchiCAD import itself not tested** (no ArchiCAD here) |
 | Live map at `/map` on the unit | served by `rtkd` and tested; **not yet deployed to the units** |
 | Map compute (TIN, contours, 3D) in WebAssembly | Zig core in `src/geom`: previously cross-checked against the JS reference (same triangles, same contour length), headless-Chromium renders; 6,000 points in 12 ms on a desktop. **Not tried on a phone**; JS fallback is automatic. See [docs/map-compute.md](docs/map-compute.md) (also why not WebGPU) |
 
