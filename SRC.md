@@ -109,3 +109,23 @@ regular ticks, at least every 100 ms. GLL and VTG are redundant load on the 1152
 Caster send buffers are separate zero-initialised globals because embedding large default-initialised
 arrays in client records would emit and copy the data in the binary. A client too far behind is
 disconnected rather than fed stale corrections. Only CRC-valid RTCM reaches the receiver.
+
+## src/geom/core.zig
+
+Fixed global arrays bound the geometry capacity and avoid embedding large initialized data in the
+binary. Triangulation uses Hilbert-ordered insertion, adjacency walks and a ghost vertex; filtered
+floating-point predicates fall back to double-double arithmetic. Values below the double-double
+noise tolerance are treated as zero to preserve symmetry on co-circular or collinear input.
+For a ghost triangle, points on the open hull edge conflict, but its endpoints do not. Input rows
+are longitude, latitude and elevation; local coordinates are east, north and elevation, with NaN
+rows for invalid inputs. Input is deduplicated to a 1 mm grid; slivers with inradius/circumradius below 0.04 and long edges
+are filtered. Contour intersections use a canonical edge order so shared points match bit for bit;
+a vertex exactly on a contour counts as at or above the level.
+
+## src/geom/wasm.zig
+
+The browser exchanges flat arrays through byte offsets into fixed-size WebAssembly memory. The
+memory never grows, so exported pointers remain valid for the instance lifetime. The info block
+contains lat0, lon0, min/max x and y, min/max elevation, spacing, max edge, and the valid, unique
+and triangle counts, in that order. Plan colours are packed as `0xRRGGBB`; 3D triangles and their
+colours are returned in back-to-front order.

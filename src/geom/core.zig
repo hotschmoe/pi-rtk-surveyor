@@ -1,20 +1,3 @@
-//! Geometry core of the map viewer: lon/lat to local metres, a de-duplicated Delaunay TIN,
-//! contour extraction, and the per-frame number crunching for the plan and 3D views.
-//!
-//! It is compiled to WebAssembly (see wasm.zig) and also runs natively for the unit tests.
-//! All state lives in fixed global arrays sized for `max_points` (no allocator, no growth);
-//! anything beyond that fails with a negative status instead of misbehaving. The big arrays are
-//! plain `= undefined` globals, which end up in .bss and cost nothing in the binary.
-//!
-//! Triangulation: incremental Bowyer-Watson with
-//!   * points inserted in Hilbert-curve order, so each insertion starts next to the last one;
-//!   * triangle adjacency, so point location is a short visibility walk and the cavity is found
-//!     by a flood fill instead of scanning every triangle;
-//!   * a ghost vertex ("infinity") instead of a super-triangle, so the hull is exact;
-//!   * orientation and in-circle tests with a fast floating-point filter and a double-double
-//!     fallback, so collinear and co-circular input (survey grids!) cannot corrupt the mesh.
-//! Expected cost is O(n log n) (sort) plus O(n) walk/cavity work for survey-like input.
-
 const std = @import("std");
 
 pub const max_points = 20000;
@@ -34,13 +17,8 @@ pub const Status = enum(i32) {
 const GHOST: u32 = 0xffff_ffff;
 const NONE: u32 = 0xffff_ffff;
 
-// ---- storage (all zero-initialised globals) ------------------------------------------------------------
-
-/// Input rows: lon, lat, elevation.
 pub var in_ll: [max_points * 3]f64 = undefined;
-/// Local metres: x east, y north, z elevation (NaN rows for rejected input).
 pub var pt: [max_points * 3]f64 = undefined;
-/// Final (filtered) triangles, as indices into `pt`.
 pub var tri_out: [3 * max_tris]u32 = undefined;
 
 var tv: [3 * max_tris]u32 = undefined; // triangle vertices (ccw), GHOST allowed
@@ -58,7 +36,6 @@ var skeys: [max_points]u64 = undefined;
 var dedupe_tab: [1 << 16]u32 = undefined;
 var nnd: [max_points]f64 = undefined;
 
-/// Scalars describing the last load; read by the JS side through `info`.
 pub const Info = enum(usize) {
     lat0,
     lon0,
@@ -79,8 +56,6 @@ pub var info: [@backingInt(Info.count)]f64 = undefined;
 
 var n_pts: usize = 0;
 var n_tri_out: usize = 0;
-
-// ---- exact-enough predicates ---------------------------------------------------------------------------
 
 const DD = struct {
     hi: f64,
@@ -113,10 +88,6 @@ const DD = struct {
         const h = p + e;
         return .{ .hi = h, .lo = e - (h - p) };
     }
-    /// Sign, with everything below `tol` reported as zero. A double-double result carries about 2^-100
-    /// relative error, so below that it is noise; calling it zero keeps the answer symmetric under
-    /// permutation of the arguments (which is what keeps the triangulation consistent on exactly
-    /// co-circular or collinear input such as survey grids).
     fn sign(a: DD, tol: f64) i32 {
         const v = a.hi + a.lo;
         return if (v > tol) 1 else if (v < -tol) -1 else 0;
@@ -126,7 +97,6 @@ const DD = struct {
 const eps: f64 = 1.1102230246251565e-16;
 const dd_tol: f64 = 1.0 / 39614081257132168796771975168.0; // 2^-95
 
-/// > 0 when c is left of a->b (counter-clockwise), < 0 right, 0 collinear.
 fn orient(ax: f64, ay: f64, bx: f64, by: f64, cx: f64, cy: f64) i32 {
     const dl = (ax - cx) * (by - cy);
     const dr = (ay - cy) * (bx - cx);
@@ -149,7 +119,6 @@ fn orient(ax: f64, ay: f64, bx: f64, by: f64, cx: f64, cy: f64) i32 {
     return adx.mul(bdy).sub(ady.mul(bdx)).sign(sum * dd_tol);
 }
 
-/// > 0 when d is strictly inside the circle through a, b, c (which must be counter-clockwise).
 fn incircle(ax: f64, ay: f64, bx: f64, by: f64, cx: f64, cy: f64, dx: f64, dy: f64) i32 {
     const adx = ax - dx;
     const ady = ay - dy;
@@ -196,8 +165,6 @@ fn orientP(a: u32, b: u32, c: u32) i32 {
     return orient(px(a), py(a), px(b), py(b), px(c), py(c));
 }
 
-// ---- Hilbert order -------------------------------------------------------------------------------------
-
 fn hilbert(xi: u32, yi: u32) u32 {
     var x = xi;
     var y = yi;
@@ -220,8 +187,6 @@ fn hilbert(xi: u32, yi: u32) u32 {
     return d;
 }
 
-// ---- triangulation ---------------------------------------------------------------------------------------
-
 var ntris: u32 = 0;
 
 fn isGhost(t: u32) bool {
@@ -229,8 +194,6 @@ fn isGhost(t: u32) bool {
     return tv[b] == GHOST or tv[b + 1] == GHOST or tv[b + 2] == GHOST;
 }
 
-/// Is p in conflict with (inside the circumcircle of) triangle t? Ghost triangles conflict when p lies
-/// strictly outside their hull edge, or on the open edge itself.
 fn conflicts(t: u32, p: u32) bool {
     const b = 3 * @as(usize, t);
     const v0 = tv[b];
@@ -239,14 +202,12 @@ fn conflicts(t: u32, p: u32) bool {
     if (v0 != GHOST and v1 != GHOST and v2 != GHOST) {
         return incircle(px(v0), py(v0), px(v1), py(v1), px(v2), py(v2), px(p), py(p)) > 0;
     }
-    // Rotate so that the ghost is last: the hull edge is (a, c) with outside on its left.
     const g: usize = if (v0 == GHOST) 0 else if (v1 == GHOST) 1 else 2;
     const a = tv[b + (g + 1) % 3];
     const c = tv[b + (g + 2) % 3];
     const o = orientP(a, c, p);
     if (o > 0) return true;
     if (o < 0) return false;
-    // collinear with the hull edge: conflict only strictly between the endpoints
     const dxp = px(p) - px(a);
     const dyp = py(p) - py(a);
     const dxe = px(c) - px(a);
@@ -284,7 +245,6 @@ fn linkSeed() void {
     }
 }
 
-/// Visibility walk from `hint` to a triangle in conflict with p (NONE if the walk gave up).
 fn locate(p: u32, hint: u32) u32 {
     var t = hint;
     var steps: u32 = 0;
@@ -310,11 +270,9 @@ fn locate(p: u32, hint: u32) u32 {
     return NONE;
 }
 
-/// Insert point p. `hint` must be a live triangle; returns a new real triangle to start the next walk from.
 fn insert(p: u32, hint: u32, stamp: u32) u32 {
     var seed = locate(p, hint);
     if (seed == NONE or !conflicts(seed, p)) {
-        // the walk could not finish (or ended on a non-conflicting triangle): scan for any conflicting one
         seed = NONE;
         var t: u32 = 0;
         while (t < ntris) : (t += 1) {
@@ -347,7 +305,6 @@ fn insert(p: u32, hint: u32, stamp: u32) u32 {
             } else mark[n] = out_c;
         }
     }
-    // boundary edges, recorded before anything is modified
     var nb: u32 = 0;
     for (cav[0..ncav]) |t| {
         const b = 3 * @as(usize, t);
@@ -363,7 +320,6 @@ fn insert(p: u32, hint: u32, stamp: u32) u32 {
             nb += 1;
         }
     }
-    // new triangles reuse the cavity's slots first
     var next_hint = hint;
     var k: u32 = 0;
     while (k < nb) : (k += 1) {
@@ -393,10 +349,8 @@ fn insert(p: u32, hint: u32, stamp: u32) u32 {
     return next_hint;
 }
 
-/// Triangulate the unique points listed in uniq[0..m]. Result: tv/tn and ntris; false if all collinear.
 fn triangulate(m: usize, minx: f64, miny: f64, range: f64) bool {
     if (m < 3) return false;
-    // Hilbert order
     const scale = if (range > 0) 65535.0 / range else 0.0;
     for (uniq[0..m], 0..) |pi, k| {
         const xi: u32 = @intFromFloat(@min(65535.0, @max(0.0, (px(pi) - minx) * scale)));
@@ -405,7 +359,6 @@ fn triangulate(m: usize, minx: f64, miny: f64, range: f64) bool {
     }
     std.sort.pdq(u64, skeys[0..m], {}, std.sort.asc(u64));
 
-    // seed triangle: first point, its nearest neighbour, and the third point with the smallest circumcircle
     const a: u32 = @truncate(skeys[0]);
     var b: u32 = NONE;
     var bd: f64 = std.math.inf(f64);
@@ -448,7 +401,6 @@ fn triangulate(m: usize, minx: f64, miny: f64, range: f64) bool {
     }
     _ = newTri(s0, s1, c);
     inline for (.{ [_]u32{ s0, s1, c }, [_]u32{ s1, c, s0 }, [_]u32{ c, s0, s1 } }) |e| {
-        // ghost across the real edge (e0, e1): (e1, e0, GHOST)
         _ = newTri(e[1], e[0], GHOST);
     }
     linkSeed();
@@ -465,8 +417,6 @@ fn triangulate(m: usize, minx: f64, miny: f64, range: f64) bool {
     return true;
 }
 
-// ---- loading ---------------------------------------------------------------------------------------------
-
 fn finite(v: f64) bool {
     return !std.math.isNan(v) and !std.math.isInf(v);
 }
@@ -480,8 +430,6 @@ fn dedupeHash(kx: f64, ky: f64) u32 {
     return @truncate((h ^ (h >> 29)) *% 0xBF58476D1CE4E5B9 >> 40);
 }
 
-/// Convert in_ll[0..n] to local metres, de-duplicate (1 mm grid), triangulate, apply the long/skinny
-/// filter. Returns the number of triangles, or a negative Status.
 pub fn load(n: usize) i32 {
     n_pts = 0;
     n_tri_out = 0;
@@ -490,7 +438,6 @@ pub fn load(n: usize) i32 {
     if (n > max_points) return @backingInt(Status.too_many_points);
     n_pts = n;
 
-    // mean position of the valid points
     var lat0: f64 = 0;
     var lon0: f64 = 0;
     var nv: usize = 0;
@@ -526,8 +473,6 @@ pub fn load(n: usize) i32 {
     return build(n);
 }
 
-/// Stage two, on `pt[0..n]` in local metres (NaN rows are rejected): bounding box, 1 mm de-duplication,
-/// triangulation, spacing and the long/skinny filter. Returns the triangle count.
 fn build(n: usize) i32 {
     n_pts = n;
     n_tri_out = 0;
@@ -555,7 +500,6 @@ fn build(n: usize) i32 {
         maxy = @max(maxy, y);
         zmin = @min(zmin, z);
         zmax = @max(zmax, z);
-        // de-duplicate on a 1 mm grid, keeping the first occurrence
         const kx = roundHalfUp(x * 1000);
         const ky = roundHalfUp(y * 1000);
         var h = dedupeHash(kx, ky) & (dedupe_tab.len - 1);
@@ -586,7 +530,6 @@ fn build(n: usize) i32 {
 
     if (!triangulate(m, minx, miny, @max(maxx - minx, maxy - miny))) return 0;
 
-    // nearest-neighbour spacing: the nearest neighbour is always a Delaunay neighbour
     for (uniq[0..m]) |u| nnd[u] = std.math.inf(f64);
     var t: u32 = 0;
     while (t < ntris) : (t += 1) {
@@ -631,8 +574,6 @@ fn build(n: usize) i32 {
     return @intCast(out);
 }
 
-/// The long/skinny filter: drop triangles with an edge over `max_edge`, a vanishing area, or an
-/// inradius/circumradius ratio under 0.04 (a "sliver" spanning empty ground).
 fn keepTriangle(a: u32, b: u32, c: u32, max_edge: f64) bool {
     const e0 = std.math.hypot(px(a) - px(b), py(a) - py(b));
     const e1 = std.math.hypot(px(b) - px(c), py(b) - py(c));
@@ -651,8 +592,6 @@ pub fn triCount() usize {
 pub fn pointCount() usize {
     return n_pts;
 }
-
-// ---- contours ---------------------------------------------------------------------------------------------
 
 pub var line_start: [max_lines]u32 = undefined;
 pub var line_len: [max_lines]u32 = undefined;
@@ -687,7 +626,6 @@ pub fn linePointCount() usize {
 }
 
 fn edgePoint(i: u32, j: u32, level: f64) u32 {
-    // canonical order: the two triangles sharing an edge compute bit-identical points
     const lo = @min(i, j);
     const hi = @max(i, j);
     const key = (@as(u64, lo) << 32) | hi;
@@ -718,8 +656,6 @@ fn pushPt(e: u32) void {
     n_line_pts += 1;
 }
 
-/// Append the contour polylines of the TIN at `level`. Returns the number of lines added or a negative Status.
-/// A level equal to a vertex height counts that vertex as "at or above", so no segment degenerates.
 pub fn contourLevel(level: f64, major: bool) i32 {
     if (!finite(level)) return 0;
     if (!tab_ready) {
@@ -727,7 +663,6 @@ pub fn contourLevel(level: f64, major: bool) i32 {
         tab_ready = true;
     }
     n_edges = 0;
-    // leave the table empty for the next level by clearing only the slots this level used
     defer {
         for (e_slot[0..n_edges]) |sl| tab[sl] = NONE;
     }
@@ -759,7 +694,6 @@ pub fn contourLevel(level: f64, major: bool) i32 {
         }
     }
     const before = n_lines;
-    // open lines first (they start at an edge point used by one segment), then closed loops
     var s: u32 = 0;
     while (s < ns) : (s += 1) {
         if (seg_used[s]) continue;
@@ -805,8 +739,6 @@ fn walk(start: u32, start_e: u32, level: f64, major: bool) bool {
     return true;
 }
 
-// ---- colour, plan and 3D views ---------------------------------------------------------------------------
-
 const ramp = [5][3]f64{
     .{ 0x2e, 0x7d, 0x4f }, .{ 0x9b, 0xc1, 0x7a }, .{ 0xe8, 0xdb, 0xa0 }, .{ 0xc9, 0xa2, 0x6b }, .{ 0x8c, 0x5a, 0x3c },
 };
@@ -824,7 +756,6 @@ fn pack(r: f64, g: f64, b: f64) u32 {
     return (@as(u32, @intFromFloat(@min(255.0, r))) << 16) | (@as(u32, @intFromFloat(@min(255.0, g))) << 8) | @as(u32, @intFromFloat(@min(255.0, b)));
 }
 
-/// Plan-view fill colour (0xRRGGBB) of each triangle from its mean elevation.
 pub var tint_out: [max_tris]u32 = undefined;
 pub fn tint2d(zmin: f64, zmax: f64) void {
     const span = @max(zmax - zmin, 1e-9);
@@ -835,7 +766,6 @@ pub fn tint2d(zmin: f64, zmax: f64) void {
     }
 }
 
-/// 3D view output: screen x, y and depth per point; triangles back to front with their shaded colour.
 pub var scr: [3 * max_points]f64 = undefined;
 pub var ord3: [max_tris]u32 = undefined;
 pub var col3: [max_tris]u32 = undefined;
@@ -888,7 +818,6 @@ pub fn prep3d(v: View) void {
         var len = @sqrt(nx * nx + ny * ny + nz * nz);
         if (len == 0) len = 1;
         lam3[t] = @max(0.25, (nx * lx + ny * ly + nz * lz) / len);
-        // sort key: depth as an order-preserving integer, then the triangle number
         skey3[t] = (@as(u64, floatKey(depth3[t])) << 32) | @as(u64, @intCast(t));
     }
     std.sort.pdq(u64, skey3[0..n_tri_out], {}, std.sort.asc(u64));
@@ -902,14 +831,12 @@ pub fn prep3d(v: View) void {
     }
 }
 
-/// Monotonic 32-bit key for a float (f32 precision is plenty for painter's-algorithm depth).
 fn floatKey(d: f64) u32 {
     const f: f32 = @floatCast(d);
     const bits: u32 = @bitCast(f);
     return if (bits & 0x8000_0000 != 0) ~bits else bits | 0x8000_0000;
 }
 
-/// Index of the point nearest to screen position (sx, sy) in the plan view, or -1 if none is within `maxd` pixels.
 pub fn nearest(sx: f64, sy: f64, cx: f64, cy: f64, sc: f64, w: f64, h: f64, maxd: f64) i32 {
     var best: i32 = -1;
     var bd = maxd;
@@ -924,5 +851,3 @@ pub fn nearest(sx: f64, sy: f64, cx: f64, cy: f64, sc: f64, w: f64, h: f64, maxd
     }
     return best;
 }
-
-// ---- tests -------------------------------------------------------------------------------------------------
