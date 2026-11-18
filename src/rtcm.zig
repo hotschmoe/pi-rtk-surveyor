@@ -113,7 +113,7 @@ pub fn decode1005(frame: []const u8) ?Station {
 }
 
 pub fn encode1005(out: []u8, id: u12, ecef: [3]f64) error{NoSpace}![]u8 {
-    var p = [_]u8{0} ** 19;
+    var p = @as([19]u8, @splat(0));
     putBits(&p, 0, 12, 1005);
     putBits(&p, 12, 12, id);
     putBits(&p, 24, 6, 0); // ITRF realisation
@@ -218,7 +218,7 @@ test "corrupt frame fails CRC; bad header rejected" {
 
 test "MSM header satellite count" {
     // Build an MSM4 GPS header with 5 satellites set.
-    var p = [_]u8{0} ** 40;
+    var p = @as([40]u8, @splat(0));
     putBits(&p, 0, 12, 1074);
     putBits(&p, 12, 12, 42);
     const sat_pos = 12 + 12 + 30 + 1 + 3 + 7 + 2 + 2 + 1 + 3;

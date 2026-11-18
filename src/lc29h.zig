@@ -307,11 +307,11 @@ const Sim = struct {
     svin_status: bool = false,
     /// Every command it was sent, for assertions.
     log: [64][96]u8 = undefined,
-    log_len: [64]usize = [_]usize{0} ** 64,
+    log_len: [64]usize = @as([64]usize, @splat(0)),
     n: usize = 0,
     /// Replies waiting to be fed back to the driver.
     q: [8][128]u8 = undefined,
-    q_len: [8]usize = [_]usize{0} ** 8,
+    q_len: [8]usize = @as([8]usize, @splat(0)),
     nq: usize = 0,
     silent: bool = false,
 

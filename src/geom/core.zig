@@ -75,7 +75,7 @@ pub const Info = enum(usize) {
     n_tris,
     count,
 };
-pub var info: [@intFromEnum(Info.count)]f64 = undefined;
+pub var info: [@backingInt(Info.count)]f64 = undefined;
 
 var n_pts: usize = 0;
 var n_tri_out: usize = 0;
@@ -486,8 +486,8 @@ pub fn load(n: usize) i32 {
     n_pts = 0;
     n_tri_out = 0;
     for (&info) |*x| x.* = 0;
-    info[@intFromEnum(Info.max_edge)] = 15;
-    if (n > max_points) return @intFromEnum(Status.too_many_points);
+    info[@backingInt(Info.max_edge)] = 15;
+    if (n > max_points) return @backingInt(Status.too_many_points);
     n_pts = n;
 
     // mean position of the valid points
@@ -521,8 +521,8 @@ pub fn load(n: usize) i32 {
         pt[3 * i + 1] = if (ok) (la - lat0) * m_lat else std.math.nan(f64);
         pt[3 * i + 2] = if (ok) z else std.math.nan(f64);
     }
-    info[@intFromEnum(Info.lat0)] = lat0;
-    info[@intFromEnum(Info.lon0)] = lon0;
+    info[@backingInt(Info.lat0)] = lat0;
+    info[@backingInt(Info.lon0)] = lon0;
     return build(n);
 }
 
@@ -572,15 +572,15 @@ fn build(n: usize) i32 {
         uniq[m] = @intCast(i);
         m += 1;
     }
-    info[@intFromEnum(Info.n_valid)] = @floatFromInt(nv);
-    info[@intFromEnum(Info.n_unique)] = @floatFromInt(m);
+    info[@backingInt(Info.n_valid)] = @floatFromInt(nv);
+    info[@backingInt(Info.n_unique)] = @floatFromInt(m);
     if (nv > 0) {
-        info[@intFromEnum(Info.minx)] = minx;
-        info[@intFromEnum(Info.maxx)] = maxx;
-        info[@intFromEnum(Info.miny)] = miny;
-        info[@intFromEnum(Info.maxy)] = maxy;
-        info[@intFromEnum(Info.zmin)] = zmin;
-        info[@intFromEnum(Info.zmax)] = zmax;
+        info[@backingInt(Info.minx)] = minx;
+        info[@backingInt(Info.maxx)] = maxx;
+        info[@backingInt(Info.miny)] = miny;
+        info[@backingInt(Info.maxy)] = maxy;
+        info[@backingInt(Info.zmin)] = zmin;
+        info[@backingInt(Info.zmax)] = zmax;
     }
     if (m < 3) return 0;
 
@@ -625,9 +625,9 @@ fn build(n: usize) i32 {
         out += 1;
     }
     n_tri_out = out;
-    info[@intFromEnum(Info.spacing)] = spacing;
-    info[@intFromEnum(Info.max_edge)] = max_edge;
-    info[@intFromEnum(Info.n_tris)] = @floatFromInt(out);
+    info[@backingInt(Info.spacing)] = spacing;
+    info[@backingInt(Info.max_edge)] = max_edge;
+    info[@backingInt(Info.n_tris)] = @floatFromInt(out);
     return @intCast(out);
 }
 
@@ -758,7 +758,7 @@ pub fn contourLevel(level: f64, major: bool) i32 {
             }
         }
         if (nh == 2) {
-            if (ns >= max_segs) return @intFromEnum(Status.contour_overflow);
+            if (ns >= max_segs) return @backingInt(Status.contour_overflow);
             seg_a[ns] = hit[0];
             seg_b[ns] = hit[1];
             seg_used[ns] = false;
@@ -776,14 +776,14 @@ pub fn contourLevel(level: f64, major: bool) i32 {
         const ends = [2]u32{ seg_a[s], seg_b[s] };
         for (ends) |e| {
             if (e_s1[e] == NONE) {
-                if (!walk(s, e, level, major)) return @intFromEnum(Status.contour_overflow);
+                if (!walk(s, e, level, major)) return @backingInt(Status.contour_overflow);
                 break;
             }
         }
     }
     s = 0;
     while (s < ns) : (s += 1) {
-        if (!seg_used[s] and !walk(s, seg_a[s], level, major)) return @intFromEnum(Status.contour_overflow);
+        if (!seg_used[s] and !walk(s, seg_a[s], level, major)) return @backingInt(Status.contour_overflow);
     }
     return @intCast(n_lines - before);
 }
@@ -1070,7 +1070,7 @@ test "predicates: orientation and in-circle on exact and near-degenerate input" 
 }
 
 test "hilbert curve is a bijection on a small grid and locality-preserving" {
-    var seen = [_]bool{false} ** 256;
+    var seen = @as([256]bool, @splat(false));
     // top-level cells of a 16x16 sample
     for (0..16) |i| for (0..16) |j| {
         const d = hilbert(@intCast(i * 4096 + 7), @intCast(j * 4096 + 7)) >> 24;
@@ -1231,7 +1231,7 @@ test "duplicates: identical and sub-millimetre points are folded" {
     ys[29] = 40;
     for (25..30) |i| zs[i] = 1;
     _ = loadPlanar(&xs, &ys, &zs);
-    try testing.expectEqual(@as(f64, 25), info[@intFromEnum(Info.n_unique)]);
+    try testing.expectEqual(@as(f64, 25), info[@backingInt(Info.n_unique)]);
     try testing.expectEqual(@as(usize, 32), n_tri_out); // 5x5 grid
     for (0..n_tri_out * 3) |i| try testing.expect(tri_out[i] < 25);
 }
@@ -1272,13 +1272,13 @@ test "NaN and infinite rows are rejected, valid rows still triangulate" {
     in_ll[3 * 13 + 1] = 200; // not a latitude
     const r = load(20);
     try testing.expect(r > 0);
-    try testing.expectEqual(@as(f64, 16), info[@intFromEnum(Info.n_valid)]);
+    try testing.expectEqual(@as(f64, 16), info[@backingInt(Info.n_valid)]);
     for ([_]usize{ 3, 7, 11, 13 }) |bad| try testing.expect(std.math.isNan(pt[3 * bad]));
     for (0..n_tri_out * 3) |i| {
         const v = tri_out[i];
         try testing.expect(v != 3 and v != 7 and v != 11 and v != 13);
     }
-    try testing.expectEqual(@as(i32, @intFromEnum(Status.too_many_points)), load(max_points + 1));
+    try testing.expectEqual(@as(i32, @backingInt(Status.too_many_points)), load(max_points + 1));
     // all invalid
     for (0..20) |i| in_ll[3 * i] = std.math.nan(f64);
     try testing.expectEqual(@as(i32, 0), load(20));
@@ -1318,8 +1318,8 @@ test "filter: far outlier and sliver triangles are dropped, spacing is the media
     _ = loadPlanar(&xs, &ys, &zs);
     try testing.expect(n_tri_out >= 30);
     for (0..n_tri_out * 3) |i| try testing.expect(tri_out[i] != 25);
-    try testing.expectApproxEqRel(@as(f64, 10), info[@intFromEnum(Info.spacing)], 1e-9);
-    try testing.expectApproxEqRel(@as(f64, 25), info[@intFromEnum(Info.max_edge)], 1e-9);
+    try testing.expectApproxEqRel(@as(f64, 10), info[@backingInt(Info.spacing)], 1e-9);
+    try testing.expectApproxEqRel(@as(f64, 25), info[@backingInt(Info.max_edge)], 1e-9);
 }
 
 test "contours of a plane are straight lines at the right place; level at a vertex is clean" {
@@ -1440,7 +1440,7 @@ test "tint ramp endpoints and 3D prep: back-to-front order, shading bounds" {
         prev = d;
     }
     // every triangle appears once
-    var seen = [_]bool{false} ** 128;
+    var seen = @as([128]bool, @splat(false));
     for (0..n_tri_out) |k| {
         try testing.expect(!seen[ord3[k]]);
         seen[ord3[k]] = true;

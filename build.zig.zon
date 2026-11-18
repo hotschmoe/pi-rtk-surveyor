@@ -2,7 +2,7 @@
     .name = .rtkd,
     .version = "0.1.0",
     .fingerprint = 0x7f5c60aacceeffcd,
-    .minimum_zig_version = "0.16.0",
+    .minimum_zig_version = "0.17.1",
     .dependencies = .{},
     .paths = .{
         "build.zig",

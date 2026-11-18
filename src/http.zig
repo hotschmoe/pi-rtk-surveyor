@@ -47,7 +47,7 @@ pub const Server = struct {
     listen_fd: sys.Fd,
     ep: sys.Epoll,
     client_tag_base: u64,
-    clients: [max_clients]Client = [_]Client{.{}} ** max_clients,
+    clients: [max_clients]Client = @as([max_clients]Client, @splat(.{})),
     served: u64 = 0,
 
     pub fn init(listen_port: u16, ep: sys.Epoll, listen_tag: u64, client_tag_base: u64) sys.Error!Server {
@@ -289,7 +289,7 @@ test "safeName rejects traversal and odd characters" {
     try std.testing.expect(!safeName("a/b"));
     try std.testing.expect(!safeName("a..b"));
     try std.testing.expect(!safeName("a b"));
-    try std.testing.expect(!safeName("x" ** 60));
+    try std.testing.expect(!safeName(&@as([60]u8, @splat('x'))));
 }
 
 const Ctx = struct {

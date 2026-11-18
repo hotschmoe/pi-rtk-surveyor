@@ -246,7 +246,7 @@ fn parseGga(it: *std.mem.SplitIterator(u8, .scalar)) Msg {
         .utc_s = utcSeconds(t),
         .lat = angle(lat, ns, 2),
         .lon = angle(lon, ew, 3),
-        .quality = @enumFromInt(q),
+        .quality = @fromBackingInt(@intCast(q)),
         .sats = sats,
         .hdop = hdop,
         .alt_msl = alt,

@@ -202,7 +202,7 @@ pub const ResponseParser = struct {
                 return 0;
             }
             if (headerValue(h[first_end + 2 .. end + 2], "Transfer-Encoding")) |te|
-                self.chunked = std.ascii.indexOfIgnoreCase(te, "chunked") != null;
+                self.chunked = containsIgnoreCase(te, "chunked");
             self.status = .streaming;
             return end + 4 - old_len;
         }
@@ -378,4 +378,12 @@ test "client parser: chunked body decodes identically however the bytes arrive" 
     var c: Sink = .{};
     end.feed(wire ++ "0\r\n\r\n" ++ "ignored", &c);
     try std.testing.expectEqualStrings("hello0123456789!", c.bytes());
+}
+
+fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
+    if (needle.len > haystack.len) return false;
+    for (0..haystack.len - needle.len + 1) |i| {
+        if (std.ascii.eqlIgnoreCase(haystack[i..][0..needle.len], needle)) return true;
+    }
+    return false;
 }

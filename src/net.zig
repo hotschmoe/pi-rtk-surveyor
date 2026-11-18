@@ -77,7 +77,7 @@ fn connectResult(fd: sys.Fd) sys.Error!void {
     _ = try sys.check(linux.getsockopt(fd, linux.SOL.SOCKET, linux.SO.ERROR, std.mem.asBytes(&err).ptr, &len));
     if (err != 0) {
         sys.last_errno = @intCast(err);
-        return if (err == @intFromEnum(linux.E.CONNREFUSED)) error.ConnectionRefused else if (err == @intFromEnum(linux.E.TIMEDOUT)) error.TimedOut else error.NetworkUnreachable;
+        return if (err == @backingInt(linux.E.CONNREFUSED)) error.ConnectionRefused else if (err == @backingInt(linux.E.TIMEDOUT)) error.TimedOut else error.NetworkUnreachable;
     }
 }
 
@@ -207,7 +207,7 @@ pub const Caster = struct {
     ep: sys.Epoll,
     client_tag_base: u64,
     cfg: *const config.Config,
-    clients: [max_clients]CasterClient = [_]CasterClient{.{}} ** max_clients,
+    clients: [max_clients]CasterClient = @as([max_clients]CasterClient, @splat(.{})),
     /// Where the base is, for the sourcetable. Updated by the app.
     lat: f64 = 0,
     lon: f64 = 0,

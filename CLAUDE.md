@@ -24,7 +24,7 @@ node tools/test_wasm.js                  # wasm core vs JS reference + speed tab
 scripts/build-wasm.sh                    # rebuild src/map.wasm from src/geom (commit it)
 ```
 
-Zig 0.16 at `/home/hotschmoe/tools/zig-aarch64-linux-0.16.0/zig` (or `$ZIG`). Build target for the Pis is
+Zig 0.17.1 on PATH (or `$ZIG`). Build target for the Pis is
 `aarch64-linux-musl`. `rtkd selftest`, `rtkd screens`, `rtkd check` are subcommands.
 
 ## Access

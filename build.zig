@@ -5,7 +5,7 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     // Release builds drop debug info; `-Dstrip=false` keeps it for gdb/addr2line.
-    const strip = b.option(bool, "strip", "Strip debug info (default: on for release modes)") orelse (optimize != .Debug);
+    const strip = b.option(bool, "strip", "Strip debug info (default: on for release modes)") orelse (optimize != .debug);
 
     const root = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
@@ -24,7 +24,7 @@ pub fn build(b: *std.Build) void {
 
     const run = b.addRunArtifact(exe);
     run.step.dependOn(b.getInstallStep());
-    if (b.args) |args| run.addArgs(args);
+    run.addPassthruArgs();
     b.step("run", "Run rtkd on this machine").dependOn(&run.step);
 
     // Unit tests run natively on the dev box (also aarch64). Fixtures under
@@ -45,7 +45,7 @@ pub fn build(b: *std.Build) void {
     }) });
     test_step.dependOn(&b.addRunArtifact(geom_tests).step);
 
-    const wasm_opt = b.option(std.builtin.OptimizeMode, "wasm-optimize", "Optimize mode of the wasm build (default ReleaseSmall)") orelse .ReleaseSmall;
+    const wasm_opt = b.option(std.builtin.Optimize, "wasm-optimize", "Optimize mode of the wasm build (default ReleaseSmall)") orelse .small;
     const wasm = b.addExecutable(.{ .name = "map", .root_module = b.createModule(.{
         .root_source_file = b.path("src/geom/wasm.zig"),
         .target = b.resolveTargetQuery(.{ .cpu_arch = .wasm32, .os_tag = .freestanding }),

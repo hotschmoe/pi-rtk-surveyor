@@ -10,7 +10,7 @@ const config = @import("config.zig");
 
 fn show(title: []const u8, fb: *const fb_mod.Fb) void {
     log.out("=== {s}", .{title});
-    log.out("+{s}+", .{"-" ** 128});
+    log.out("+{s}+", .{&@as([128]u8, @splat('-'))});
     var line: [128 * 3 + 2]u8 = undefined;
     var y: i32 = 0;
     while (y < fb_mod.H) : (y += 2) {
@@ -29,7 +29,7 @@ fn show(title: []const u8, fb: *const fb_mod.Fb) void {
         n += 1;
         log.out("{s}", .{line[0..n]});
     }
-    log.out("+{s}+", .{"-" ** 128});
+    log.out("+{s}+", .{&@as([128]u8, @splat('-'))});
 }
 
 pub fn run() void {

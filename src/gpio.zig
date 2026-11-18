@@ -10,7 +10,7 @@ const ConfigAttr = extern struct { attr: Attr, mask: u64 };
 const LineConfig = extern struct {
     flags: u64,
     num_attrs: u32,
-    padding: [5]u32 = [_]u32{0} ** 5,
+    padding: [5]u32 = @as([5]u32, @splat(0)),
     attrs: [10]ConfigAttr,
 };
 const LineRequest = extern struct {
@@ -19,7 +19,7 @@ const LineRequest = extern struct {
     config: LineConfig,
     num_lines: u32,
     event_buffer_size: u32,
-    padding: [5]u32 = [_]u32{0} ** 5,
+    padding: [5]u32 = @as([5]u32, @splat(0)),
     fd: i32,
 };
 const LineValues = extern struct { bits: u64, mask: u64 };

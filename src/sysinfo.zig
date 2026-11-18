@@ -108,7 +108,7 @@ fn underVoltage() ?u32 {
 const Ifreq = extern struct {
     name: [16]u8,
     addr: linux.sockaddr.in,
-    pad: [8]u8 = [_]u8{0} ** 8,
+    pad: [8]u8 = @as([8]u8, @splat(0)),
 };
 
 fn ifaceAddr(iface: []const u8) ?[4]u8 {

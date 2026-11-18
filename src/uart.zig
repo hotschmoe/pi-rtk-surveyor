@@ -35,8 +35,8 @@ pub fn open(path: []const u8, baud: u32) sys.Error!sys.Fd {
     var cf: u32 = @bitCast(t.cflag);
     cf = (cf & ~(CBAUD_MASK | 0x30 | 0x40 | 0x100 | 0x200 | 0x400 | 0x80000000)) | code | CS8 | CREAD | CLOCAL;
     t.cflag = @bitCast(cf);
-    t.cc[@intFromEnum(linux.V.MIN)] = 0;
-    t.cc[@intFromEnum(linux.V.TIME)] = 0;
+    t.cc[@backingInt(linux.V.MIN)] = 0;
+    t.cc[@backingInt(linux.V.TIME)] = 0;
     _ = try sys.check(linux.tcsetattr(fd, .NOW, &t));
     _ = linux.ioctl(fd, 0x540B, 2); // TCFLSH, TCIOFLUSH
     return fd;

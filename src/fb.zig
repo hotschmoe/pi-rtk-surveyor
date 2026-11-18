@@ -12,10 +12,10 @@ pub const PAGES = H / 8;
 pub const FontSize = enum { small, large };
 
 pub const Fb = struct {
-    pages: [PAGES][W]u8 = [_][W]u8{[_]u8{0} ** W} ** PAGES,
+    pages: [PAGES][W]u8 = @as([PAGES][W]u8, @splat(@splat(0))),
 
     pub fn clear(self: *Fb) void {
-        self.pages = [_][W]u8{[_]u8{0} ** W} ** PAGES;
+        self.pages = @as([PAGES][W]u8, @splat(@splat(0)));
     }
 
     pub fn eql(a: *const Fb, b: *const Fb) bool {

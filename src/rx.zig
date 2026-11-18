@@ -29,7 +29,7 @@ pub const Rx = struct {
     // is per *signal* on this receiver (L1 and L5 of one satellite count twice), so it can exceed
     // the number of satellites in view. GSA arrive after their GGA, so the mask is committed when
     // the next epoch begins.
-    used_mask: [8][4]u64 = [_][4]u64{[_]u64{0} ** 4} ** 8,
+    used_mask: [8][4]u64 = @as([8][4]u64, @splat(@splat(0))),
     gsa_seen: bool = false,
     sats_used_sv: ?u8 = null,
 
@@ -40,7 +40,7 @@ pub const Rx = struct {
 
     // GSV: satellites in view per talker (GP, GL, GA, GB, GQ, ...)
     view_talker: [8][2]u8 = undefined,
-    view_n: [8]u8 = [_]u8{0} ** 8,
+    view_n: [8]u8 = @as([8]u8, @splat(0)),
     view_count: u8 = 0,
 
     // PQTMEPE
@@ -117,7 +117,7 @@ pub const Rx = struct {
             };
             self.sats_used_sv = @intCast(@min(n, 255));
         } else self.sats_used_sv = null;
-        self.used_mask = [_][4]u64{[_]u64{0} ** 4} ** 8;
+        self.used_mask = @as([8][4]u64, @splat(@splat(0)));
         self.gsa_seen = false;
     }
 

@@ -1,7 +1,7 @@
 # Shared helpers for the dev-loop scripts. Source, do not execute.
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ZIG="${ZIG:-/home/hotschmoe/tools/zig-aarch64-linux-0.16.0/zig}"
+ZIG="${ZIG:-zig}"
 TARGET="aarch64-linux-musl"
 
 die() { echo "error: $*" >&2; exit 1; }

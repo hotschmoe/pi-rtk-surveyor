@@ -17,9 +17,9 @@ pub const Edge = struct { button: Button, pressed: bool };
 
 /// Pure debounce logic (tested without hardware).
 pub const Debounce = struct {
-    down: [count]bool = [_]bool{false} ** count,
-    last_event_ms: [count]u64 = [_]u64{0} ** count,
-    dirty: [count]bool = [_]bool{false} ** count,
+    down: [count]bool = @as([count]bool, @splat(false)),
+    last_event_ms: [count]u64 = @as([count]u64, @splat(0)),
+    dirty: [count]bool = @as([count]bool, @splat(false)),
 
     pub fn onEvent(self: *Debounce, idx: usize, t_ms: u64) void {
         self.dirty[idx] = true;
@@ -40,7 +40,7 @@ pub const Debounce = struct {
             const pressed = (levels >> @intCast(i)) & 1 == 0;
             if (pressed != self.down[i] and n < out.len) {
                 self.down[i] = pressed;
-                out[n] = .{ .button = @enumFromInt(i), .pressed = pressed };
+                out[n] = .{ .button = @fromBackingInt(@intCast(i)), .pressed = pressed };
                 n += 1;
             }
         }

@@ -21,7 +21,7 @@ const Counter = struct {
     rtcm: u32 = 0,
     version: [48]u8 = undefined,
     version_len: usize = 0,
-    types: [8]u16 = [_]u16{0} ** 8,
+    types: [8]u16 = @as([8]u16, @splat(0)),
     n_types: usize = 0,
 
     pub fn onNmea(self: *Counter, body: []const u8) void {

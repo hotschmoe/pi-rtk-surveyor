@@ -117,7 +117,7 @@ pub const Demux = struct {
 const Collector = struct {
     nmea_count: usize = 0,
     rtcm_count: usize = 0,
-    types: [4096]u16 = [_]u16{0} ** 4096,
+    types: [4096]u16 = @as([4096]u16, @splat(0)),
     last_nmea: [max_nmea]u8 = undefined,
     last_len: usize = 0,
 

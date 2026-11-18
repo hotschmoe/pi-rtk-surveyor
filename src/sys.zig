@@ -30,7 +30,7 @@ pub var last_errno: u32 = 0;
 pub fn check(rc: usize) Error!usize {
     const e = linux.errno(rc);
     if (e == .SUCCESS) return rc;
-    last_errno = @intFromEnum(e);
+    last_errno = @backingInt(e);
     return switch (e) {
         .AGAIN => error.WouldBlock,
         .INTR => error.Interrupted,
@@ -134,7 +134,7 @@ pub fn mkdirAll(path: []const u8) Error!void {
             const z = try Z(&b, path[0..i]);
             const e = linux.errno(linux.mkdirat(linux.AT.FDCWD, z, 0o755));
             if (e != .SUCCESS and e != .EXIST) {
-                last_errno = @intFromEnum(e);
+                last_errno = @backingInt(e);
                 return if (e == .ACCES or e == .PERM or e == .ROFS) error.AccessDenied else error.Unexpected;
             }
         }

@@ -200,7 +200,7 @@ pub const App = struct {
     q_since_ms: u64 = 0,
     first_fix_s: ?u32 = null,
     last_epoch_seen: u32 = 0,
-    q_counts: [9]u32 = [_]u32{0} ** 9,
+    q_counts: [9]u32 = @as([9]u32, @splat(0)),
     http: ?http.Server = null,
     combo_since_ms: u64 = 0,
     powering_off: bool = false,
@@ -495,7 +495,7 @@ pub const App = struct {
     /// previous state lasted. A fix that flickers shows up in the journal instead of only on the screen.
     fn noteEpoch(self: *App, now: u64) void {
         const q = self.rx.quality;
-        self.q_counts[@min(@intFromEnum(q), self.q_counts.len - 1)] += 1;
+        self.q_counts[@min(@backingInt(q), self.q_counts.len - 1)] += 1;
         if (q == self.last_q) return;
         log.info("fix: {s} -> {s} after {d} s ({d} satellites, hdop {?d:.1}, est. error {?d:.3} m)", .{
             self.last_q.label(), q.label(),    (now -| self.q_since_ms) / 1000,
@@ -612,11 +612,11 @@ pub const App = struct {
             var n: usize = 0;
             for (self.q_counts, 0..) |c, i| {
                 if (c == 0) continue;
-                const part = std.fmt.bufPrint(buf[n..], "{s}{s} {d}", .{ if (n > 0) ", " else "", @as(nmea.Quality, @enumFromInt(i)).label(), c }) catch break;
+                const part = std.fmt.bufPrint(buf[n..], "{s}{s} {d}", .{ if (n > 0) ", " else "", @as(nmea.Quality, @fromBackingInt(@intCast(i))).label(), c }) catch break;
                 n += part.len;
             }
             log.info("fix: epochs in the last {d} s: {s}", .{ stats_ms / 1000, buf[0..n] });
-            self.q_counts = [_]u32{0} ** 9;
+            self.q_counts = @as([9]u32, @splat(0));
         }
         if (self.caster) |*c| log.info("caster: {d} rover(s) streaming, {d} frames / {d} B sent, {d} slow clients dropped", .{ c.streaming(), c.frames_out, c.bytes_out, c.dropped_slow });
         if (self.link) |*l| log.info("link: {s}, {d} frames / {d} B received, {d} connect(s), baseline {?d:.1} m", .{ @tagName(l.state), l.frames_in, l.bytes_in, l.connects, self.base_seen.baseline_m });
@@ -876,7 +876,7 @@ pub const App = struct {
     /// K1 + K3 held together for 3 s: clean power-off (no pulling the plug on a card).
     fn checkPowerCombo(self: *App, now: u64) void {
         const k = &(self.keys orelse return);
-        const held = k.deb.down[@intFromEnum(input.Button.key1)] and k.deb.down[@intFromEnum(input.Button.key3)];
+        const held = k.deb.down[@backingInt(input.Button.key1)] and k.deb.down[@backingInt(input.Button.key3)];
         if (!held) {
             if (self.combo_since_ms != 0) {
                 self.combo_since_ms = 0;
