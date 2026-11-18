@@ -221,7 +221,7 @@ pub const Job = struct {
         var existing: [64 * 1024]u8 = undefined;
         if (sys.readFile(p, &existing)) |text| {
             var lines = std.mem.splitScalar(u8, text, '\n');
-            _ = lines.next(); // header
+            _ = lines.next();
             while (lines.next()) |l| {
                 const comma = std.mem.indexOfScalar(u8, l, ',') orelse continue;
                 const id = std.fmt.parseInt(u32, l[0..comma], 10) catch continue;

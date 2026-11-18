@@ -391,7 +391,7 @@ function draw2D(w, h) {
 function drawPoints2D(w, h) {
   if (!$('cPts').checked && S.tris.length) return;
   ctx.font = '10px system-ui'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-  const placed = [];  // label rectangles already drawn; later labels that would overlap are skipped
+  const placed = [];
   S.pts.forEach((p, i) => {
     const s = P2(p.x, p.y, w, h), fixed = p.fix === 'RTK_FIXED';
     ctx.beginPath(); ctx.arc(s[0], s[1], i === S.hover ? 5 : 3, 0, 7);

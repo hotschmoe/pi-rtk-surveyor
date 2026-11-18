@@ -136,7 +136,7 @@ fn setValue(comptime T: type, dst: *T, v: []const u8) ?[]const u8 {
         .int => dst.* = std.fmt.parseInt(T, v, 0) catch return "not a valid number",
         .float => dst.* = std.fmt.parseFloat(T, v) catch return "not a valid number",
         .@"enum" => dst.* = std.meta.stringToEnum(T, v) orelse return enumHint(T),
-        .@"struct" => dst.set(v) catch return "value too long", // Str(N)
+        .@"struct" => dst.set(v) catch return "value too long",
         else => @compileError("unsupported config field type " ++ @typeName(T)),
     }
     return null;
