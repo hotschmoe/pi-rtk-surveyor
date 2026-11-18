@@ -645,16 +645,6 @@ fn keepTriangle(a: u32, b: u32, c: u32, max_edge: f64) bool {
     return inr / circ >= 0.04;
 }
 
-/// Real (unfiltered) triangles of the last triangulation; for tests.
-fn realTris() usize {
-    var k: usize = 0;
-    var t: u32 = 0;
-    while (t < ntris) : (t += 1) {
-        if (!isGhost(t)) k += 1;
-    }
-    return k;
-}
-
 pub fn triCount() usize {
     return n_tri_out;
 }

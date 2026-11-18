@@ -242,18 +242,6 @@ fn parseCode(s: []const u8) u16 {
     return std.fmt.parseInt(u16, t[0..end], 10) catch 0;
 }
 
-const Sink = struct {
-    got: [4096]u8 = undefined,
-    n: usize = 0,
-    pub fn onData(self: *Sink, d: []const u8) void {
-        @memcpy(self.got[self.n..][0..d.len], d);
-        self.n += d.len;
-    }
-    fn bytes(self: *const Sink) []const u8 {
-        return self.got[0..self.n];
-    }
-};
-
 fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
     if (needle.len > haystack.len) return false;
     for (0..haystack.len - needle.len + 1) |i| {

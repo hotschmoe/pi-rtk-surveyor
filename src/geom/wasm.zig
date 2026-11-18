@@ -87,7 +87,3 @@ pub export fn col3_ptr() usize {
 pub export fn nearest(sx: f64, sy: f64, cx: f64, cy: f64, sc: f64, w: f64, h: f64, maxd: f64) i32 {
     return core.nearest(sx, sy, cx, cy, sc, w, h, maxd);
 }
-
-test {
-    _ = core;
-}

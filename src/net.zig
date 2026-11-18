@@ -584,9 +584,3 @@ fn Pipe(comptime S: type) type {
         }
     };
 }
-
-// ---- tests (real sockets on loopback) ----------------------------------------------------------
-
-const TAG_LISTEN: u64 = 1 << 32;
-const TAG_CLIENT: u64 = 2 << 32;
-const TAG_LINK: u64 = 3 << 32;
